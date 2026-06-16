@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from ...core.shape_util import rounded_path
 from ...core.typography_util import font_for
@@ -48,6 +48,8 @@ class MdBadge(QWidget):
         self._tracker: _HostTracker | None = None
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # A badge is always its intrinsic size; never let a layout stretch it.
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         ThemeManager.instance().themeChanged.connect(self.update)
         self.set_value(value)
 

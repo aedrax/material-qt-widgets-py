@@ -49,10 +49,20 @@ _MATERIAL_FAMILIES = (
     "Material Icons",
 )
 
+# The Material Symbols Outlined variable font is bundled with the package so
+# glyphs render out of the box without any system font installed.
+_BUNDLED_FONT = os.path.normpath(
+    os.path.join(
+        os.path.dirname(__file__), os.pardir, os.pardir, "assets",
+        "MaterialSymbolsOutlined.ttf",
+    )
+)
+
 # Candidate filesystem locations for a Material Symbols/Icons font file. Checked
 # only if no family is already registered. The MATERIAL_SYMBOLS_FONT env var, if
-# set, is checked first.
+# set, is checked first, then the bundled font, then common system locations.
 _FONT_FILE_CANDIDATES = (
+    _BUNDLED_FONT,
     "/usr/share/fonts/truetype/material-symbols/MaterialSymbolsOutlined.ttf",
     "/usr/share/fonts/MaterialSymbolsOutlined.ttf",
     "/usr/share/fonts/truetype/material-design-icons/MaterialIcons-Regular.ttf",

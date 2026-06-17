@@ -1,0 +1,399 @@
+"""A single browsable gallery of every Material Qt component.
+
+The Qt analog of the Material Web catalog: a left-hand component list and a
+scrollable showcase panel for the selected component, plus a global light/dark
+toggle. Run with ``python -m material_qt.gallery``.
+"""
+
+from __future__ import annotations
+
+import sys
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QApplication,
+    QButtonGroup,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QScrollArea,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ..theme.theme_manager import ThemeManager, ThemeMode
+from ..tokens.color import ColorRole
+from ..tokens.typography import TypescaleRole
+from ..core.typography_util import font_for_role
+from ..widgets.badge import MdBadge
+from ..widgets.button import (
+    MdElevatedButton,
+    MdFilledButton,
+    MdFilledTonalButton,
+    MdOutlinedButton,
+    MdTextButton,
+)
+from ..widgets.checkbox import MdCheckbox
+from ..widgets.divider import MdDivider
+from ..widgets.fab import FabColor, FabSize, MdBrandedFab, MdFab
+from ..widgets.icon import MdIcon
+from ..widgets.iconbutton import (
+    MdFilledIconButton,
+    MdFilledTonalIconButton,
+    MdIconButton,
+    MdOutlinedIconButton,
+)
+from ..widgets.item import MdItem
+from ..widgets.progress import MdCircularProgress, MdLinearProgress
+from ..widgets.radio import MdRadio
+from ..widgets.slider import MdSlider
+from ..widgets.switch import MdSwitch
+
+
+def _section(title: str) -> QLabel:
+    label = QLabel(title)
+    label.setFont(font_for_role(TypescaleRole.TITLE_SMALL))
+    return label
+
+
+def _row(*widgets: QWidget, spacing: int = 16) -> QWidget:
+    w = QWidget()
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(spacing)
+    for widget in widgets:
+        lay.addWidget(widget)
+    lay.addStretch(1)
+    return w
+
+
+def _labeled(widget: QWidget, text: str) -> QWidget:
+    w = QWidget()
+    lay = QHBoxLayout(w)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(12)
+    lay.addWidget(widget)
+    lay.addWidget(QLabel(text))
+    lay.addStretch(1)
+    return w
+
+
+# -- per-component showcase builders --------------------------------------
+
+
+def _build_button() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    variants = [
+        ("Elevated", MdElevatedButton),
+        ("Filled", MdFilledButton),
+        ("Tonal", MdFilledTonalButton),
+        ("Outlined", MdOutlinedButton),
+        ("Text", MdTextButton),
+    ]
+    lay.addWidget(_section("Variants"))
+    lay.addWidget(_row(*[cls(label) for label, cls in variants]))
+    lay.addWidget(_section("With icon"))
+    lay.addWidget(_row(*[cls(label, icon="add") for label, cls in variants]))
+    lay.addWidget(_section("Disabled"))
+    disabled = []
+    for label, cls in variants:
+        b = cls(label)
+        b.setEnabled(False)
+        disabled.append(b)
+    lay.addWidget(_row(*disabled))
+    lay.addStretch(1)
+    return page
+
+
+def _build_icon_button() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    variants = [
+        ("Standard", MdIconButton),
+        ("Filled", MdFilledIconButton),
+        ("Tonal", MdFilledTonalIconButton),
+        ("Outlined", MdOutlinedIconButton),
+    ]
+    lay.addWidget(_section("Variants"))
+    lay.addWidget(_row(*[cls("favorite") for _, cls in variants]))
+    lay.addWidget(_section("Toggle (selected)"))
+    lay.addWidget(
+        _row(*[cls("favorite", toggle=True, checked=True) for _, cls in variants])
+    )
+    lay.addStretch(1)
+    return page
+
+
+def _build_fab() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Sizes"))
+    lay.addWidget(
+        _row(
+            MdFab("edit", size=FabSize.SMALL),
+            MdFab("edit", size=FabSize.REGULAR),
+            MdFab("edit", size=FabSize.LARGE),
+            MdBrandedFab(),
+        )
+    )
+    lay.addWidget(_section("Colors"))
+    lay.addWidget(
+        _row(*[MdFab("add", color=c) for c in (
+            FabColor.SURFACE, FabColor.PRIMARY, FabColor.SECONDARY, FabColor.TERTIARY
+        )])
+    )
+    lay.addWidget(_section("Extended"))
+    lay.addWidget(_row(MdFab("add", label="Compose", color=FabColor.PRIMARY)))
+    lay.addStretch(1)
+    return page
+
+
+def _build_checkbox() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    unchecked = MdCheckbox()
+    checked = MdCheckbox(checked=True)
+    indet = MdCheckbox()
+    indet.set_indeterminate(True)
+    err = MdCheckbox(checked=True, error=True)
+    disabled = MdCheckbox(checked=True)
+    disabled.setEnabled(False)
+    for w, t in (
+        (unchecked, "Unchecked"), (checked, "Checked"), (indet, "Indeterminate"),
+        (err, "Error"), (disabled, "Disabled"),
+    ):
+        lay.addWidget(_labeled(w, t))
+    lay.addStretch(1)
+    return page
+
+
+def _build_radio() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Single-selection group"))
+    group = QWidget()
+    gl = QVBoxLayout(group)
+    gl.setContentsMargins(0, 0, 0, 0)
+    for i, name in enumerate(("Apple", "Banana", "Cherry")):
+        gl.addWidget(_labeled(MdRadio(checked=(i == 0)), name))
+    lay.addWidget(group)
+    lay.addStretch(1)
+    return page
+
+
+def _build_switch() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_labeled(MdSwitch(), "Off"))
+    lay.addWidget(_labeled(MdSwitch(checked=True), "On"))
+    d = MdSwitch(checked=True)
+    d.setEnabled(False)
+    lay.addWidget(_labeled(d, "Disabled"))
+    lay.addStretch(1)
+    return page
+
+
+def _build_slider() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Continuous"))
+    lay.addWidget(MdSlider(value=40))
+    lay.addWidget(_section("Discrete (step 10, ticks)"))
+    lay.addWidget(MdSlider(value=60, step=10, ticks=True))
+    lay.addStretch(1)
+    return page
+
+
+def _build_progress() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Linear"))
+    lay.addWidget(MdLinearProgress(value=0.6))
+    lay.addWidget(MdLinearProgress(indeterminate=True))
+    lay.addWidget(_section("Circular"))
+    lay.addWidget(
+        _row(
+            MdCircularProgress(value=0.25),
+            MdCircularProgress(value=0.7),
+            MdCircularProgress(indeterminate=True),
+        )
+    )
+    lay.addStretch(1)
+    return page
+
+
+def _build_item() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(MdItem("One-line item"))
+    lay.addWidget(MdDivider())
+    lay.addWidget(
+        MdItem("Two-line item", supporting_text="Supporting text",
+               leading=MdIcon("folder"))
+    )
+    lay.addWidget(MdDivider())
+    lay.addWidget(
+        MdItem(
+            "Three-line item",
+            supporting_text="Longer supporting text that wraps across lines.",
+            trailing_supporting_text="100+",
+            leading=MdIcon("email"),
+            trailing=MdIcon("chevron_right"),
+        )
+    )
+    lay.addStretch(1)
+    return page
+
+
+def _build_badge() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    dot, eight, many = MdBadge(), MdBadge(), MdBadge()
+    eight.set_value("8")
+    many.set_value("99+")
+    lay.addWidget(_labeled(dot, "Dot"))
+    lay.addWidget(_labeled(eight, "Value 8"))
+    lay.addWidget(_labeled(many, "Value 99+"))
+    lay.addStretch(1)
+    return page
+
+
+def _build_divider() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(QLabel("Above"))
+    lay.addWidget(MdDivider())
+    lay.addWidget(QLabel("Below"))
+    inset = MdDivider()
+    inset.inset_start = True
+    lay.addWidget(inset)
+    lay.addWidget(QLabel("After inset-start divider"))
+    lay.addStretch(1)
+    return page
+
+
+def _build_icon() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Icons (24px)"))
+    names = ["home", "favorite", "settings", "search", "delete", "check_circle"]
+    lay.addWidget(_row(*[MdIcon(n) for n in names]))
+    lay.addWidget(_section("Sizes"))
+    lay.addWidget(_row(*[MdIcon("star", size=s) for s in (18, 24, 36, 48)]))
+    lay.addStretch(1)
+    return page
+
+
+def _page() -> QWidget:
+    page = QWidget()
+    lay = QVBoxLayout(page)
+    lay.setContentsMargins(28, 24, 28, 24)
+    lay.setSpacing(14)
+    return page
+
+
+_COMPONENTS = [
+    ("Badge", _build_badge),
+    ("Button", _build_button),
+    ("Checkbox", _build_checkbox),
+    ("Divider", _build_divider),
+    ("FAB", _build_fab),
+    ("Icon", _build_icon),
+    ("Icon button", _build_icon_button),
+    ("Item", _build_item),
+    ("Progress", _build_progress),
+    ("Radio", _build_radio),
+    ("Slider", _build_slider),
+    ("Switch", _build_switch),
+]
+
+
+class GalleryWindow(QWidget):
+    """Browsable gallery of all Material Qt components."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("Material Qt — Gallery")
+        self._dark = False
+        ThemeManager.instance().themeChanged.connect(self._restyle)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # Header.
+        header = QWidget()
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(24, 16, 24, 16)
+        title = QLabel("Material Qt")
+        title.setFont(font_for_role(TypescaleRole.TITLE_LARGE))
+        hl.addWidget(title)
+        hl.addStretch(1)
+        self._theme_btn = MdFilledTonalButton("Dark mode", icon="dark_mode")
+        self._theme_btn.clicked.connect(self._toggle_theme)
+        hl.addWidget(self._theme_btn)
+        root.addWidget(header)
+        self._header = header
+
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+
+        self._nav = QListWidget()
+        self._nav.setFixedWidth(200)
+        self._stack = QStackedWidget()
+        for label, builder in _COMPONENTS:
+            QListWidgetItem(label, self._nav)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(builder())
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            self._stack.addWidget(scroll)
+        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        self._nav.setCurrentRow(0)
+
+        body.addWidget(self._nav)
+        body.addWidget(self._stack, 1)
+        root.addLayout(body, 1)
+        self._restyle()
+
+    def _toggle_theme(self) -> None:
+        self._dark = not self._dark
+        self._theme_btn.setText("Light mode" if self._dark else "Dark mode")
+        self._theme_btn.set_icon("light_mode" if self._dark else "dark_mode")
+        ThemeManager.instance().set_mode(
+            ThemeMode.DARK if self._dark else ThemeMode.LIGHT
+        )
+
+    def _restyle(self) -> None:
+        # Paint the window and nav with theme surface colors.
+        theme = ThemeManager.instance()
+        bg = theme.color(ColorRole.SURFACE).name()
+        on = theme.color(ColorRole.ON_SURFACE).name()
+        nav_bg = theme.color(ColorRole.SURFACE_CONTAINER_LOW).name()
+        sel = theme.color(ColorRole.SECONDARY_CONTAINER).name()
+        on_sel = theme.color(ColorRole.ON_SECONDARY_CONTAINER).name()
+        self.setStyleSheet(f"GalleryWindow {{ background: {bg}; }}")
+        self._header.setStyleSheet(f"background: {nav_bg};")
+        self._nav.setStyleSheet(
+            f"QListWidget {{ background: {nav_bg}; color: {on}; border: none;"
+            f" outline: none; padding: 8px; }}"
+            f" QListWidget::item {{ padding: 10px 12px; border-radius: 8px; }}"
+            f" QListWidget::item:selected {{ background: {sel}; color: {on_sel}; }}"
+        )
+
+
+def main() -> int:
+    app = QApplication(sys.argv)
+    w = GalleryWindow()
+    w.resize(900, 620)
+    w.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

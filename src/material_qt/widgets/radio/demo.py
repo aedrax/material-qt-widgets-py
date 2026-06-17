@@ -6,6 +6,7 @@ import sys
 
 from PySide6.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -38,8 +39,13 @@ class Demo(QWidget):
         group = QWidget()
         gl = QVBoxLayout(group)
         gl.setContentsMargins(0, 0, 0, 0)
+        # Radios wrapped in row widgets land in different parents, so use a
+        # QButtonGroup to enforce single-selection exclusivity.
+        self._group = QButtonGroup(self)
         for i, name in enumerate(("Apple", "Banana", "Cherry")):
-            gl.addWidget(_row(name, MdRadio(checked=(i == 0))))
+            r = MdRadio(checked=(i == 0))
+            self._group.addButton(r)
+            gl.addWidget(_row(name, r))
         root.addWidget(QLabel("Single selection group:"))
         root.addWidget(group)
 

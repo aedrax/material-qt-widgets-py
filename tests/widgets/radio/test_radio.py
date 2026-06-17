@@ -70,3 +70,27 @@ def test_repeated_toggle_with_animation_settle(qtbot):
         sel.setChecked(True)
         QTest.qWait(200)  # let the 150ms animation fully finish
     assert a.isChecked() and not b.isChecked()
+
+
+def test_button_group_exclusive_across_parents(qtbot):
+    """Radios in different parent widgets (e.g. wrapped in row layouts) are made
+    mutually exclusive by a QButtonGroup, even though autoExclusive alone can't
+    link them."""
+    from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QWidget
+
+    container = QWidget()
+    qtbot.addWidget(container)
+    group = QButtonGroup(container)
+    radios = []
+    for i in range(3):
+        # Each radio in its OWN wrapper -> different parents.
+        row = QWidget(container)
+        QHBoxLayout(row)
+        r = MdRadio(checked=(i == 0))
+        row.layout().addWidget(r)
+        group.addButton(r)
+        radios.append(r)
+    assert [r.isChecked() for r in radios] == [True, False, False]
+    radios[2].setChecked(True)
+    assert sum(r.isChecked() for r in radios) == 1
+    assert radios[2].isChecked()

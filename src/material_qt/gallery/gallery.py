@@ -38,6 +38,13 @@ from ..widgets.button import (
 )
 from ..widgets.card import CardVariant, MdCard
 from ..widgets.checkbox import MdCheckbox
+from ..widgets.chips import (
+    MdAssistChip,
+    MdChipSet,
+    MdFilterChip,
+    MdInputChip,
+    MdSuggestionChip,
+)
 from ..widgets.divider import MdDivider
 from ..widgets.field import FieldVariant, MdField
 from ..widgets.fab import FabColor, FabSize, MdBrandedFab, MdFab
@@ -256,6 +263,29 @@ def _build_card() -> QWidget:
     return page
 
 
+def _build_chips() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Assist / Suggestion"))
+    s1 = MdChipSet()
+    s1.add_chip(MdAssistChip("Add to calendar", icon="event"))
+    s1.add_chip(MdSuggestionChip("Suggestion"))
+    lay.addWidget(s1)
+    lay.addWidget(_section("Filter"))
+    s2 = MdChipSet()
+    s2.add_chip(MdFilterChip("All", selected=True))
+    s2.add_chip(MdFilterChip("Unread"))
+    s2.add_chip(MdFilterChip("Starred"))
+    lay.addWidget(s2)
+    lay.addWidget(_section("Input"))
+    s3 = MdChipSet()
+    for name in ("Alice", "Bob", "Carol"):
+        s3.add_chip(MdInputChip(name, icon="person"))
+    lay.addWidget(s3)
+    lay.addStretch(1)
+    return page
+
+
 def _build_field() -> QWidget:
     from PySide6.QtWidgets import QLineEdit
 
@@ -354,6 +384,7 @@ _COMPONENTS = [
     ("Button", _build_button),
     ("Card", _build_card),
     ("Checkbox", _build_checkbox),
+    ("Chips", _build_chips),
     ("Divider", _build_divider),
     ("FAB", _build_fab),
     ("Field", _build_field),

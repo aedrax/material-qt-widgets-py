@@ -134,21 +134,36 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
             return self.STYLE.hover_elevation
         return self.STYLE.elevation
 
+    def _refresh_elevation(self) -> None:
+        self.set_elevation(self._current_elevation())
+
     # -- repaint triggers --------------------------------------------------
 
     def enterEvent(self, event) -> None:  # noqa: N802
         super().enterEvent(event)
+        self._refresh_elevation()
         self.update()
 
     def leaveEvent(self, event) -> None:  # noqa: N802
         super().leaveEvent(event)
+        self._refresh_elevation()
         self.update()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        super().mousePressEvent(event)
+        self._refresh_elevation()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        super().mouseReleaseEvent(event)
+        self._refresh_elevation()
 
     def changeEvent(self, event) -> None:  # noqa: N802
         from PySide6.QtCore import QEvent
 
-        if event.type() == QEvent.Type.EnabledChange and self.ripple is not None:
-            self.ripple.set_enabled(self.isEnabled())
+        if event.type() == QEvent.Type.EnabledChange:
+            if self.ripple is not None:
+                self.ripple.set_enabled(self.isEnabled())
+            self._refresh_elevation()
         super().changeEvent(event)
         self.update()
 
@@ -165,10 +180,8 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
         path = self.clip_path()
         style = self.STYLE
 
-        # Elevation (shadows) behind the container, for elevated/tonal variants.
-        level = self._current_elevation()
-        if level != ElevationLevel.LEVEL0:
-            self._elevation_painter.paint(painter, path, level)
+        # Elevation is a QGraphicsDropShadowEffect kept in sync by
+        # _refresh_elevation(); nothing to paint here.
 
         # Container fill.
         if style.container_role is not None:

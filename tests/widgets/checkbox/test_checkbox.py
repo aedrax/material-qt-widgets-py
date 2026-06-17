@@ -49,3 +49,17 @@ def test_ripple_and_focus(qtbot):
     qtbot.addWidget(cb)
     assert cb.ripple is not None
     assert cb.focus_ring is not None
+
+
+def test_repeated_toggle_with_animation_settle(qtbot):
+    """Regression: a finished animation must not leave a stale C++ object that
+    crashes the next toggle (persistent-animation fix)."""
+    from PySide6.QtTest import QTest
+
+    cb = MdCheckbox()
+    qtbot.addWidget(cb)
+    cb.show()
+    for _ in range(4):
+        cb.toggle()
+        QTest.qWait(200)  # let the 150ms animation fully finish between toggles
+    assert cb.isChecked() is False

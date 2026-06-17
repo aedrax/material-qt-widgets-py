@@ -46,7 +46,12 @@ class MdCheckbox(MaterialWidgetMixin, QAbstractButton):
         self._indeterminate = False
         self._error = bool(error)
         self._check_t = 1.0 if checked else 0.0
-        self._anim: QVariantAnimation | None = None
+        # One persistent animation, reused per toggle (never deleted mid-flight,
+        # so repeated clicks never hit a stale C++ object).
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(duration_ms(_ANIM))
+        self._anim.setEasingCurve(easing_curve(Easing.STANDARD))
+        self._anim.valueChanged.connect(self._set_check_t)
         # 40px circular state layer; the 18px box is painted centered.
         self._init_material(
             shape=ShapeScale.FULL,
@@ -95,24 +100,16 @@ class MdCheckbox(MaterialWidgetMixin, QAbstractButton):
         role = ColorRole.PRIMARY if self._marked() else ColorRole.ON_SURFACE
         if self.ripple is not None:
             self.ripple.set_color_role(ColorRole.ERROR if self._error else role)
+        self._anim.stop()
         # Snap (no animation) for programmatic state set before the widget is
         # shown, or when motion is disabled.
         if not MOTION_ENABLED or not self.isVisible():
-            if self._anim is not None:
-                self._anim.stop()
             self._check_t = target
             self.update()
             return
-        if self._anim is not None:
-            self._anim.stop()
-        anim = QVariantAnimation(self)
-        anim.setStartValue(self._check_t)
-        anim.setEndValue(target)
-        anim.setDuration(duration_ms(_ANIM))
-        anim.setEasingCurve(easing_curve(Easing.STANDARD))
-        anim.valueChanged.connect(self._set_check_t)
-        anim.start(QVariantAnimation.DeletionPolicy.DeleteWhenStopped)
-        self._anim = anim
+        self._anim.setStartValue(self._check_t)
+        self._anim.setEndValue(target)
+        self._anim.start()
 
     def _set_check_t(self, value) -> None:
         self._check_t = float(value)

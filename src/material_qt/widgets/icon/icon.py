@@ -117,6 +117,42 @@ def _try_load_font_file() -> str | None:
     return None
 
 
+def material_symbols_family(style: "IconStyle" = None) -> str | None:
+    """Resolve a usable Material Symbols family, loading the bundled font if needed.
+
+    Shared by other components (buttons, FABs) that render glyphs inline. Returns
+    the family name, or ``None`` if no Material Symbols font can be found.
+    """
+    preferred = style.value if style is not None else IconStyle.OUTLINED.value
+    family = _registered_material_family(preferred)
+    if family is not None:
+        return family
+    loaded = _try_load_font_file()
+    if loaded is not None:
+        return _registered_material_family(preferred) or loaded
+    return None
+
+
+def material_symbols_font(size: int, *, filled: bool = False) -> QFont | None:
+    """Build a Material Symbols :class:`QFont` at ``size`` px, or ``None`` if absent."""
+    family = material_symbols_family()
+    if family is None:
+        return None
+    font = QFont()
+    font.setFamily(family)
+    font.setFamilies([family])
+    font.setPixelSize(max(1, int(size)))
+    font.setWeight(QFont.Weight(400))
+    set_axis = getattr(font, "setVariableAxis", None)
+    if set_axis is not None:
+        try:
+            set_axis("FILL", 1.0 if filled else 0.0)
+            set_axis("opsz", float(size))
+        except (TypeError, ValueError):
+            pass
+    return font
+
+
 class MdIcon(QWidget):
     """A Material Symbols icon, rendered by ligature name.
 
@@ -315,4 +351,10 @@ class MdIcon(QWidget):
         painter.end()
 
 
-__all__ = ["DEFAULT_ICON_SIZE", "IconStyle", "MdIcon"]
+__all__ = [
+    "DEFAULT_ICON_SIZE",
+    "IconStyle",
+    "MdIcon",
+    "material_symbols_family",
+    "material_symbols_font",
+]

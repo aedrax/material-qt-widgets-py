@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..theme.theme_manager import ThemeManager, ThemeMode
+from ..theme.theme_manager import ThemeManager
 from ..tokens.color import ColorRole
 from ..tokens.typography import TypescaleRole
 from ..core.typography_util import font_for_role
@@ -451,7 +451,6 @@ class GalleryWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Material Qt — Gallery")
-        self._dark = False
         ThemeManager.instance().themeChanged.connect(self._restyle)
 
         root = QVBoxLayout(self)
@@ -495,16 +494,17 @@ class GalleryWindow(QWidget):
         self._restyle()
 
     def _toggle_theme(self) -> None:
-        self._dark = not self._dark
-        self._theme_btn.setText("Light mode" if self._dark else "Dark mode")
-        self._theme_btn.set_icon("light_mode" if self._dark else "dark_mode")
-        ThemeManager.instance().set_mode(
-            ThemeMode.DARK if self._dark else ThemeMode.LIGHT
-        )
+        # Flip relative to the *actual* current theme (which may start in SYSTEM
+        # mode resolving to dark), so the first click always changes the theme.
+        ThemeManager.instance().toggle_light_dark()
 
     def _restyle(self) -> None:
         # Paint the window and nav with theme surface colors.
         theme = ThemeManager.instance()
+        # Keep the toggle button label/icon in sync with the real theme state.
+        dark = theme.is_dark
+        self._theme_btn.setText("Light mode" if dark else "Dark mode")
+        self._theme_btn.set_icon("light_mode" if dark else "dark_mode")
         bg = theme.color(ColorRole.SURFACE).name()
         on = theme.color(ColorRole.ON_SURFACE).name()
         nav_bg = theme.color(ColorRole.SURFACE_CONTAINER_LOW).name()

@@ -56,6 +56,7 @@ from ..widgets.iconbutton import (
     MdOutlinedIconButton,
 )
 from ..widgets.item import MdItem
+from ..widgets.navigationtab import MdNavigationTab
 from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
 from ..widgets.segmentedbutton import MdSegmentedButton, MdSegmentedButtonSet
@@ -330,6 +331,29 @@ def _build_field() -> QWidget:
     return page
 
 
+def _build_navigation_tab() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Navigation tabs"))
+    bar = QHBoxLayout()
+    bar.setSpacing(0)
+    grp = QButtonGroup(page)
+    for i, (label, icon) in enumerate(
+        [("Home", "home"), ("Search", "search"), ("Saved", "bookmark"),
+         ("Profile", "person")]
+    ):
+        t = MdNavigationTab(label, icon=icon)
+        if i == 0:
+            t.setChecked(True)
+        grp.addButton(t)
+        bar.addWidget(t)
+    holder = QWidget()
+    holder.setLayout(bar)
+    lay.addWidget(holder)
+    lay.addStretch(1)
+    return page
+
+
 def _build_item() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -412,6 +436,7 @@ _COMPONENTS = [
     ("Icon", _build_icon),
     ("Icon button", _build_icon_button),
     ("Item", _build_item),
+    ("Navigation tab", _build_navigation_tab),
     ("Progress", _build_progress),
     ("Radio", _build_radio),
     ("Segmented", _build_segmented),

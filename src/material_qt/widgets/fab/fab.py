@@ -124,6 +124,9 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
             return ElevationLevel.LEVEL4 if not self._lowered else ElevationLevel.LEVEL2
         return self._rest_elevation()
 
+    def _refresh_elevation(self) -> None:
+        self.set_elevation(self._current_elevation())
+
     # -- sizing ------------------------------------------------------------
 
     def sizeHint(self) -> QSize:  # noqa: N802
@@ -143,11 +146,21 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
 
     def enterEvent(self, event) -> None:  # noqa: N802
         super().enterEvent(event)
+        self._refresh_elevation()
         self.update()
 
     def leaveEvent(self, event) -> None:  # noqa: N802
         super().leaveEvent(event)
+        self._refresh_elevation()
         self.update()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        super().mousePressEvent(event)
+        self._refresh_elevation()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        super().mouseReleaseEvent(event)
+        self._refresh_elevation()
 
     def changeEvent(self, event) -> None:  # noqa: N802
         if event.type() == QEvent.Type.EnabledChange and self.ripple is not None:
@@ -172,10 +185,8 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
         theme = ThemeManager.instance()
         path = self.clip_path()
 
-        level = self._current_elevation()
-        if level != ElevationLevel.LEVEL0:
-            self._elevation_painter.paint(painter, path, level)
-
+        # Elevation is a QGraphicsDropShadowEffect kept in sync by
+        # _refresh_elevation(); nothing to paint here.
         painter.fillPath(path, theme.color(self._cfg.container_role))
 
         fg = theme.color(self._cfg.fg_role)

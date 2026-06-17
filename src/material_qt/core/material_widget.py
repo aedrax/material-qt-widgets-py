@@ -84,11 +84,12 @@ class MaterialWidgetMixin:
         # Theme reactivity.
         ThemeManager.instance().themeChanged.connect(widget.update)
 
-        # Apply elevation effect (skipped when a ripple overlay is present, to
-        # avoid QGraphicsEffect interfering with child overlay compositing).
-        self._apply_elevation_effect = not ripple
-        if self._apply_elevation_effect:
-            apply_elevation(widget, self._elevation)
+        # Elevation always uses a QGraphicsDropShadowEffect — a real soft shadow
+        # that extends beyond the widget bounds. It composites correctly over the
+        # ripple/focus child overlays (verified), so it is not disabled for ripple
+        # widgets. The stroke-based ElevationPainter produced a hard, clipped edge.
+        self._apply_elevation_effect = True
+        apply_elevation(widget, self._elevation)
 
     # -- helpers -----------------------------------------------------------
 

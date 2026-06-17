@@ -1,0 +1,51 @@
+"""Tests for MdCheckbox."""
+
+from __future__ import annotations
+
+from material_qt.widgets.checkbox import MdCheckbox
+
+
+def test_toggle_and_signal(qtbot):
+    cb = MdCheckbox()
+    qtbot.addWidget(cb)
+    states = []
+    cb.toggled.connect(states.append)
+    cb.toggle()
+    assert cb.isChecked() is True
+    assert states == [True]
+
+
+def test_checked_clears_indeterminate(qtbot):
+    cb = MdCheckbox()
+    qtbot.addWidget(cb)
+    cb.set_indeterminate(True)
+    assert cb.indeterminate is True
+    cb.setChecked(True)
+    assert cb.indeterminate is False
+
+
+def test_size_is_state_layer(qtbot):
+    cb = MdCheckbox()
+    qtbot.addWidget(cb)
+    assert cb.sizeHint().width() == 40
+    assert cb.sizeHint().height() == 40
+
+
+def test_error_and_disabled_render(qtbot):
+    for kw in ({}, {"checked": True}, {"checked": True, "error": True}):
+        cb = MdCheckbox(**kw)
+        qtbot.addWidget(cb)
+        cb.resize(cb.sizeHint())
+        cb.grab()
+    cb = MdCheckbox(checked=True)
+    qtbot.addWidget(cb)
+    cb.setEnabled(False)
+    cb.resize(cb.sizeHint())
+    cb.grab()
+
+
+def test_ripple_and_focus(qtbot):
+    cb = MdCheckbox()
+    qtbot.addWidget(cb)
+    assert cb.ripple is not None
+    assert cb.focus_ring is not None

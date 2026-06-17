@@ -39,6 +39,7 @@ from ..widgets.button import (
 from ..widgets.card import CardVariant, MdCard
 from ..widgets.checkbox import MdCheckbox
 from ..widgets.divider import MdDivider
+from ..widgets.field import FieldVariant, MdField
 from ..widgets.fab import FabColor, FabSize, MdBrandedFab, MdFab
 from ..widgets.icon import MdIcon
 from ..widgets.iconbutton import (
@@ -255,6 +256,29 @@ def _build_card() -> QWidget:
     return page
 
 
+def _build_field() -> QWidget:
+    from PySide6.QtWidgets import QLineEdit
+
+    page = _page()
+    lay = page.layout()
+
+    def field(variant, label, **kw):
+        f = MdField(variant=variant, label=label, **kw)
+        edit = QLineEdit()
+        edit.setStyleSheet("background: transparent; border: none;")
+        edit.textChanged.connect(lambda t: f.set_populated(bool(t)))
+        f.set_content(edit)
+        f.setMinimumWidth(280)
+        return f
+
+    lay.addWidget(field(FieldVariant.FILLED, "Filled", supporting_text="Supporting text"))
+    lay.addWidget(field(FieldVariant.OUTLINED, "Outlined"))
+    lay.addWidget(field(FieldVariant.OUTLINED, "Error", supporting_text="Required",
+                        error=True))
+    lay.addStretch(1)
+    return page
+
+
 def _build_item() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -332,6 +356,7 @@ _COMPONENTS = [
     ("Checkbox", _build_checkbox),
     ("Divider", _build_divider),
     ("FAB", _build_fab),
+    ("Field", _build_field),
     ("Icon", _build_icon),
     ("Icon button", _build_icon_button),
     ("Item", _build_item),

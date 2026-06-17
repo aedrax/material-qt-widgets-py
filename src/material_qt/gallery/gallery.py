@@ -58,6 +58,7 @@ from ..widgets.iconbutton import (
 from ..widgets.item import MdItem
 from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
+from ..widgets.segmentedbutton import MdSegmentedButton, MdSegmentedButtonSet
 from ..widgets.slider import MdSlider
 from ..widgets.switch import MdSwitch
 
@@ -207,6 +208,26 @@ def _build_switch() -> QWidget:
     d = MdSwitch(checked=True)
     d.setEnabled(False)
     lay.addWidget(_labeled(d, "Disabled"))
+    lay.addStretch(1)
+    return page
+
+
+def _build_segmented() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Single-select"))
+    single = MdSegmentedButtonSet()
+    for i, label in enumerate(("Day", "Week", "Month")):
+        seg = MdSegmentedButton(label)
+        if i == 0:
+            seg.setChecked(True)
+        single.add_segment(seg)
+    lay.addWidget(single)
+    lay.addWidget(_section("Multi-select"))
+    multi = MdSegmentedButtonSet(multi=True)
+    for label in ("Bold", "Italic", "Underline"):
+        multi.add_segment(MdSegmentedButton(label))
+    lay.addWidget(multi)
     lay.addStretch(1)
     return page
 
@@ -393,6 +414,7 @@ _COMPONENTS = [
     ("Item", _build_item),
     ("Progress", _build_progress),
     ("Radio", _build_radio),
+    ("Segmented", _build_segmented),
     ("Slider", _build_slider),
     ("Switch", _build_switch),
 ]

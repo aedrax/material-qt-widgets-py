@@ -36,6 +36,7 @@ from ..widgets.button import (
     MdOutlinedButton,
     MdTextButton,
 )
+from ..widgets.card import CardVariant, MdCard
 from ..widgets.checkbox import MdCheckbox
 from ..widgets.divider import MdDivider
 from ..widgets.fab import FabColor, FabSize, MdBrandedFab, MdFab
@@ -231,6 +232,29 @@ def _build_progress() -> QWidget:
     return page
 
 
+def _build_card() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    row = QHBoxLayout()
+    row.setSpacing(16)
+    for variant, label in (
+        (CardVariant.ELEVATED, "Elevated"),
+        (CardVariant.FILLED, "Filled"),
+        (CardVariant.OUTLINED, "Outlined"),
+    ):
+        card = MdCard(variant=variant)
+        card.add_widget(QLabel(label))
+        card.add_widget(QLabel("Supporting content."))
+        card.setFixedSize(180, 110)
+        row.addWidget(card)
+    row.addStretch(1)
+    holder = QWidget()
+    holder.setLayout(row)
+    lay.addWidget(holder)
+    lay.addStretch(1)
+    return page
+
+
 def _build_item() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -304,6 +328,7 @@ def _page() -> QWidget:
 _COMPONENTS = [
     ("Badge", _build_badge),
     ("Button", _build_button),
+    ("Card", _build_card),
     ("Checkbox", _build_checkbox),
     ("Divider", _build_divider),
     ("FAB", _build_fab),

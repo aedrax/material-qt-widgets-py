@@ -62,3 +62,13 @@ def test_renders(qtbot):
         qtbot.addWidget(c)
         c.resize(c.sizeHint())
         c.grab()
+
+
+def test_filter_chip_expands_when_selected(qtbot):
+    """Regression: selecting a filter chip adds a checkmark, so its size hint
+    must grow (and updateGeometry fire) or the label gets clipped."""
+    c = MdFilterChip("Unread")
+    qtbot.addWidget(c)
+    unselected_w = c.sizeHint().width()
+    c.setChecked(True)
+    assert c.sizeHint().width() > unselected_w

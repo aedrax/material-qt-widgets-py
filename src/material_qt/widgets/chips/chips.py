@@ -59,7 +59,15 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.toggled.connect(lambda *_: self.update())
+        self.toggled.connect(self._on_toggled)
+
+    def _on_toggled(self, *_) -> None:
+        # Selection can change the leading content (e.g. a filter chip's
+        # checkmark), so the size hint changes — re-query the layout, don't just
+        # repaint, or the label gets clipped.
+        self.updateGeometry()
+        self.adjustSize()
+        self.update()
 
     # -- selection-dependent colors (overridden by FilterChip) -------------
 

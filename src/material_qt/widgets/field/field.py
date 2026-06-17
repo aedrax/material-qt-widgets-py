@@ -31,7 +31,11 @@ from ...tokens.shape import CornerRadii
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 
-_FIELD_H = 56
+# Reserve space above the box so the floated label can sit ON the outlined
+# field's top border (the web uses overflow-visible for the same effect).
+_TOP = 8
+_BOX_H = 48
+_FIELD_H = _TOP + _BOX_H  # 56 total box area
 _PAD = 16
 _SUPPORT_H = 20
 _CORNER = 4.0
@@ -91,6 +95,13 @@ class MdField(MaterialWidgetMixin, QWidget):
         self._content = widget
         widget.setParent(self)
         widget.installEventFilter(self)
+        # A QLineEdit content should be chrome-less so the field draws the
+        # container/indicator; make it transparent so the label shows through.
+        from PySide6.QtWidgets import QLineEdit
+
+        if isinstance(widget, QLineEdit):
+            widget.setFrame(False)
+            widget.setStyleSheet("background: transparent; border: none;")
         self._relayout_content()
         widget.show()
 
@@ -160,11 +171,11 @@ class MdField(MaterialWidgetMixin, QWidget):
     def _relayout_content(self) -> None:
         if self._content is None:
             return
-        # Content sits in the lower part of the 56px box, leaving room for the
-        # floated label at the top.
-        top = 24 if self._label else 16
+        # Content sits in the lower part of the box, leaving room for the floated
+        # label at the top.
+        top = _TOP + (18 if self._label else 12)
         self._content.setGeometry(
-            _PAD, top, max(0, self.width() - 2 * _PAD), _FIELD_H - top - 8
+            _PAD, top, max(0, self.width() - 2 * _PAD), max(0, _FIELD_H - top - 6)
         )
 
     # -- painting ----------------------------------------------------------
@@ -174,7 +185,7 @@ class MdField(MaterialWidgetMixin, QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         theme = ThemeManager.instance()
-        box = QRectF(0, 0, self.width(), _FIELD_H)
+        box = QRectF(0, _TOP, self.width(), _BOX_H)
 
         accent = ColorRole.ERROR if self._error else (
             ColorRole.PRIMARY if self._focused else None
@@ -221,7 +232,7 @@ class MdField(MaterialWidgetMixin, QWidget):
 
             notch = QRegion(self.rect())
             notch = notch.subtracted(
-                QRegion(int(_PAD - 2), 0, int(label_w), int(width + 2))
+                QRegion(int(_PAD - 2), 0, int(label_w), int(_TOP + width + 2))
             )
             painter.setClipRegion(notch)
             painter.drawPath(path)
@@ -236,14 +247,18 @@ class MdField(MaterialWidgetMixin, QWidget):
         role = accent or ColorRole.ON_SURFACE_VARIANT
         if not self.isEnabled():
             role = ColorRole.ON_SURFACE
-        painter.setPen(theme.color(role))
-        # Interpolate position/size between resting (centered) and floated (top).
-        resting_y, floated_y = (_FIELD_H - 24) / 2.0 + 4, 6.0
-        y = resting_y + (floated_y - resting_y) * t
+        # Interpolate the label's vertical CENTER between resting (centered in
+        # the box) and floated. Outlined floats onto the top border; filled
+        # floats to just inside the top of the container.
         font = self._label_font if t < 0.5 else self._float_font
         painter.setFont(font)
+        painter.setPen(theme.color(role))
+        resting_center = _TOP + _BOX_H / 2.0
+        floated_center = _TOP if self._variant is FieldVariant.OUTLINED else _TOP + 6.0
+        center_y = resting_center + (floated_center - resting_center) * t
+        h = QFontMetrics(font).height()
         painter.drawText(
-            QRectF(_PAD, y, self.width() - 2 * _PAD, 22),
+            QRectF(_PAD, center_y - h / 2.0, self.width() - 2 * _PAD, h),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self._label,
         )

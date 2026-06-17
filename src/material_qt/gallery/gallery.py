@@ -178,8 +178,13 @@ def _build_radio() -> QWidget:
     group = QWidget()
     gl = QVBoxLayout(group)
     gl.setContentsMargins(0, 0, 0, 0)
+    # Wrapping each radio in its own row widget puts them in different parents,
+    # so autoExclusive can't link them — a QButtonGroup enforces exclusivity.
+    btn_group = QButtonGroup(group)
     for i, name in enumerate(("Apple", "Banana", "Cherry")):
-        gl.addWidget(_labeled(MdRadio(checked=(i == 0)), name))
+        r = MdRadio(checked=(i == 0))
+        btn_group.addButton(r)
+        gl.addWidget(_labeled(r, name))
     lay.addWidget(group)
     lay.addStretch(1)
     return page

@@ -43,7 +43,12 @@ class MdRadio(MaterialWidgetMixin, QAbstractButton):
         self.setCheckable(True)
         self.setAutoExclusive(True)
         self._dot_t = 1.0 if checked else 0.0
-        self._anim: QVariantAnimation | None = None
+        # One persistent animation, reused per toggle (avoids stale C++ object
+        # on repeated clicks once an animation has finished).
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(duration_ms(_ANIM))
+        self._anim.setEasingCurve(easing_curve(Easing.STANDARD))
+        self._anim.valueChanged.connect(self._set_dot_t)
         self._init_material(
             shape=ShapeScale.FULL,
             ripple=True,
@@ -62,22 +67,14 @@ class MdRadio(MaterialWidgetMixin, QAbstractButton):
             self.ripple.set_color_role(
                 ColorRole.PRIMARY if checked else ColorRole.ON_SURFACE
             )
+        self._anim.stop()
         if not MOTION_ENABLED or not self.isVisible():
-            if self._anim is not None:
-                self._anim.stop()
             self._dot_t = target
             self.update()
             return
-        if self._anim is not None:
-            self._anim.stop()
-        anim = QVariantAnimation(self)
-        anim.setStartValue(self._dot_t)
-        anim.setEndValue(target)
-        anim.setDuration(duration_ms(_ANIM))
-        anim.setEasingCurve(easing_curve(Easing.STANDARD))
-        anim.valueChanged.connect(self._set_dot_t)
-        anim.start(QVariantAnimation.DeletionPolicy.DeleteWhenStopped)
-        self._anim = anim
+        self._anim.setStartValue(self._dot_t)
+        self._anim.setEndValue(target)
+        self._anim.start()
 
     def _set_dot_t(self, value) -> None:
         self._dot_t = float(value)

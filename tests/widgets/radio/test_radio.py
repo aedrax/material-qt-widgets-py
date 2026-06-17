@@ -50,3 +50,23 @@ def test_ripple_and_focus(qtbot):
     r = MdRadio()
     qtbot.addWidget(r)
     assert r.ripple is not None and r.focus_ring is not None
+
+
+def test_repeated_toggle_with_animation_settle(qtbot):
+    """Regression: a finished animation must not leave a stale C++ object that
+    crashes the next toggle (persistent-animation fix)."""
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QVBoxLayout, QWidget
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    lay = QVBoxLayout(parent)
+    a, b = MdRadio(checked=True), MdRadio()
+    lay.addWidget(a)
+    lay.addWidget(b)
+    parent.show()
+    # Alternate selection; each switch animates the dot in/out on both radios.
+    for sel in (b, a, b, a):
+        sel.setChecked(True)
+        QTest.qWait(200)  # let the 150ms animation fully finish
+    assert a.isChecked() and not b.isChecked()

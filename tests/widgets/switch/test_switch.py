@@ -49,3 +49,17 @@ def test_focus_ring(qtbot):
     sw = MdSwitch()
     qtbot.addWidget(sw)
     assert sw.focus_ring is not None
+
+
+def test_repeated_toggle_with_animation_settle(qtbot):
+    """Regression: a finished animation must not leave a stale C++ object that
+    crashes the next toggle (persistent-animation fix)."""
+    from PySide6.QtTest import QTest
+
+    sw = MdSwitch()
+    qtbot.addWidget(sw)
+    sw.show()
+    for _ in range(4):
+        sw.toggle()
+        QTest.qWait(250)  # let the 200ms animation fully finish between toggles
+    assert sw.isChecked() is False

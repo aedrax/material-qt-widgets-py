@@ -64,6 +64,7 @@ from ..widgets.radio import MdRadio
 from ..widgets.segmentedbutton import MdSegmentedButton, MdSegmentedButtonSet
 from ..widgets.slider import MdSlider
 from ..widgets.switch import MdSwitch
+from ..widgets.tabs import MdTabs
 from ..widgets.textfield import MdFilledTextField, MdOutlinedTextField
 
 
@@ -311,6 +312,24 @@ def _build_chips() -> QWidget:
     return page
 
 
+def _build_tabs() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Primary"))
+    primary = MdTabs()
+    primary.add_tab("Flights", icon="flight")
+    primary.add_tab("Trips", icon="luggage")
+    primary.add_tab("Explore", icon="explore")
+    lay.addWidget(primary)
+    lay.addWidget(_section("Secondary"))
+    secondary = MdTabs(secondary=True)
+    for t in ("Overview", "Specifications", "Reviews"):
+        secondary.add_tab(t)
+    lay.addWidget(secondary)
+    lay.addStretch(1)
+    return page
+
+
 def _build_text_field() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -502,6 +521,7 @@ _COMPONENTS = [
     ("Segmented", _build_segmented),
     ("Slider", _build_slider),
     ("Switch", _build_switch),
+    ("Tabs", _build_tabs),
     ("Text field", _build_text_field),
 ]
 

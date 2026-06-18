@@ -56,6 +56,7 @@ from ..widgets.iconbutton import (
     MdOutlinedIconButton,
 )
 from ..widgets.item import MdItem
+from ..widgets.list import MdList, MdListItem
 from ..widgets.navigationtab import MdNavigationTab
 from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
@@ -348,6 +349,23 @@ def _build_field() -> QWidget:
     return page
 
 
+def _build_list() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lst = MdList()
+    lst.add_item(MdListItem("Inbox", supporting_text="3 new messages",
+                            leading=MdIcon("inbox"), trailing_supporting_text="3"))
+    lst.add_item(MdListItem("Starred", leading=MdIcon("star"),
+                            trailing=MdIcon("chevron_right")), divider=True)
+    lst.add_item(MdListItem("Sent", leading=MdIcon("send")), divider=True)
+    lst.add_item(MdListItem("Drafts", supporting_text="2 drafts",
+                            leading=MdIcon("drafts")), divider=True)
+    lst.setMaximumWidth(420)
+    lay.addWidget(lst)
+    lay.addStretch(1)
+    return page
+
+
 def _build_navigation_tab() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -453,6 +471,7 @@ _COMPONENTS = [
     ("Icon", _build_icon),
     ("Icon button", _build_icon_button),
     ("Item", _build_item),
+    ("List", _build_list),
     ("Navigation tab", _build_navigation_tab),
     ("Progress", _build_progress),
     ("Radio", _build_radio),

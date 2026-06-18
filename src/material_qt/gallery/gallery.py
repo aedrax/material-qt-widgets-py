@@ -100,7 +100,9 @@ def _section(title: str) -> QLabel:
 def _row(*widgets: QWidget, spacing: int = 16) -> QWidget:
     w = QWidget()
     lay = QHBoxLayout(w)
-    lay.setContentsMargins(0, 0, 0, 0)
+    # Generous margins so elevation drop-shadows (up to FAB level-3) aren't
+    # clipped by this row widget's bounds — Qt clips children to the parent rect.
+    lay.setContentsMargins(10, 8, 10, 16)
     lay.setSpacing(spacing)
     for widget in widgets:
         lay.addWidget(widget)
@@ -328,6 +330,8 @@ def _build_card() -> QWidget:
     page = _page()
     lay = page.layout()
     row = QHBoxLayout()
+    # Margins so the elevated card's drop-shadow isn't clipped by the holder.
+    row.setContentsMargins(10, 8, 10, 16)
     row.setSpacing(16)
     for variant, label in (
         (CardVariant.ELEVATED, "Elevated"),

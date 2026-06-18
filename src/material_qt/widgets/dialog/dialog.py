@@ -10,10 +10,9 @@ on a scrim click or Escape.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QVariantAnimation, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
-    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QVBoxLayout,
@@ -105,12 +104,16 @@ class MdDialog(QWidget):
         self._actions.addStretch(1)
         pl.addLayout(self._actions)
 
-        self._opacity = QGraphicsOpacityEffect(self)
-        self.setGraphicsEffect(self._opacity)
+        # Enter animation drives a [0..1] fade applied to the scrim alpha + a
+        # subtle panel slide. We deliberately do NOT use a QGraphicsOpacityEffect
+        # here: the panel already has a QGraphicsDropShadowEffect (elevation), and
+        # nesting an effect inside an effect makes Qt spam "painter not active"
+        # errors on every repaint.
+        self._fade = 0.0
         self._anim = QVariantAnimation(self)
         self._anim.setDuration(duration_ms(Duration.MEDIUM2))
         self._anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
-        self._anim.valueChanged.connect(self._opacity.setOpacity)
+        self._anim.valueChanged.connect(self._set_fade)
 
         parent.installEventFilter(self)
         ThemeManager.instance().themeChanged.connect(self.update)
@@ -161,7 +164,12 @@ class MdDialog(QWidget):
             self._anim.setEndValue(1.0)
             self._anim.start()
         else:
-            self._opacity.setOpacity(1.0)
+            self._set_fade(1.0)
+
+    def _set_fade(self, value) -> None:
+        self._fade = float(value)
+        self._center_panel()
+        self.update()
 
     def close_dialog(self) -> None:
         self.hide()
@@ -181,8 +189,13 @@ class MdDialog(QWidget):
         w = max(_MIN_W, min(_MAX_W, avail_w - 48))
         self._panel.adjustSize()
         h = self._panel.sizeHint().height()
+        # Subtle slide-up as the dialog fades in (no opacity effect needed).
+        slide = int((1.0 - self._fade) * 12)
         self._panel.setGeometry(
-            int((self.width() - w) / 2), int((self.height() - h) / 2), int(w), int(h)
+            int((self.width() - w) / 2),
+            int((self.height() - h) / 2) + slide,
+            int(w),
+            int(h),
         )
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -205,7 +218,7 @@ class MdDialog(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         scrim = QColor(ThemeManager.instance().color(ColorRole.SCRIM))
-        scrim.setAlphaF(_SCRIM_OPACITY)
+        scrim.setAlphaF(_SCRIM_OPACITY * self._fade)
         painter.fillRect(self.rect(), scrim)
 
 

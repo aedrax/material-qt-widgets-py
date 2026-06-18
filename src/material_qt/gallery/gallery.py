@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication,
@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
 from ..theme.theme_manager import ThemeManager
 from ..theme.presets import PRESETS
 from ..core.responsive import ResponsiveHelper, WindowSizeClass, size_class_for
+from ..core.motion import MOTION_ENABLED, duration_ms, easing_curve
+from ..tokens.motion import Duration, Easing
 from ..tokens.color import ColorRole
 from ..tokens.typography import TypescaleRole, spec_for
 from ..core.typography_util import font_for_role
@@ -788,8 +790,9 @@ _SCRIM_OPACITY = 0.32
 
 
 class _NavModal(QWidget):
-    """A modal navigation drawer overlay (compact/medium widths): scrim + the
-    drawer hosted in a left scroll panel. Dismisses on a scrim click."""
+    """An animated modal navigation drawer overlay (compact/medium widths): the
+    drawer slides in from the left while the scrim fades in (M3 emphasized
+    motion). Dismisses on a scrim click or destination selection."""
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -799,6 +802,11 @@ class _NavModal(QWidget):
         self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         self._scroll.setFixedWidth(_DRAWER_W)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._t = 0.0  # 0 = closed (off-screen left), 1 = fully open
+        self._opened = False
+        self._anim = QVariantAnimation(self)
+        self._anim.valueChanged.connect(self._set_t)
+        self._anim.finished.connect(self._on_anim_finished)
         self.hide()
 
     def host(self, drawer: QWidget) -> None:
@@ -807,24 +815,72 @@ class _NavModal(QWidget):
     def release(self) -> QWidget | None:
         return self._scroll.takeWidget()
 
+    def is_open(self) -> bool:
+        return self._opened
+
+    # -- open / close (animated) ------------------------------------------
+
     def open(self) -> None:
+        if self._opened:
+            return
+        self._opened = True
         self.setGeometry(self.parentWidget().rect())
-        self._scroll.setGeometry(0, 0, _DRAWER_W, self.height())
+        self._reposition()
         self.raise_()
         self.show()
+        self._animate_to(1.0, Duration.LONG1, Easing.EMPHASIZED_DECELERATE)
+
+    def close(self) -> None:
+        if not self._opened:
+            return
+        self._opened = False
+        self._animate_to(0.0, Duration.SHORT4, Easing.EMPHASIZED_ACCELERATE)
+
+    def _animate_to(self, target: float, duration: Duration, easing: Easing) -> None:
+        self._anim.stop()
+        if not MOTION_ENABLED:
+            self._set_t(target)
+            self._on_anim_finished()
+            return
+        self._anim.setStartValue(self._t)
+        self._anim.setEndValue(target)
+        self._anim.setDuration(duration_ms(duration))
+        self._anim.setEasingCurve(easing_curve(easing))
+        self._anim.start()
+
+    def _set_t(self, value) -> None:
+        self._t = float(value)
+        self._reposition()
+        self.update()  # repaint scrim at new opacity
+
+    def _on_anim_finished(self) -> None:
+        if not self._opened and self._t <= 0.0:
+            self.hide()  # fully closed — remove the overlay
+
+    def reset(self) -> None:
+        """Snap closed without animation (used when leaving compact mode)."""
+        self._anim.stop()
+        self._opened = False
+        self._t = 0.0
+        self.hide()
+
+    def _reposition(self) -> None:
+        # Slide the panel in from the left: x in [-_DRAWER_W, 0] as t goes 0->1.
+        x = round(_DRAWER_W * (self._t - 1.0))
+        self._scroll.setGeometry(x, 0, _DRAWER_W, self.height())
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self._scroll.setGeometry(0, 0, _DRAWER_W, self.height())
+        self._reposition()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.position().x() > _DRAWER_W:  # clicked the scrim
-            self.hide()
+            self.close()
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         scrim = QColor(ThemeManager.instance().color(ColorRole.SCRIM))
-        scrim.setAlphaF(_SCRIM_OPACITY)
+        scrim.setAlphaF(_SCRIM_OPACITY * self._t)  # fade with the slide
         painter.fillRect(self.rect(), scrim)
 
 
@@ -936,7 +992,7 @@ class GalleryWindow(QWidget):
             self._nav_scroll.hide()
             self._hamburger.show()
         else:
-            self._modal.hide()
+            self._modal.reset()
             drawer = self._modal.release()
             if drawer is not None:
                 self._nav_scroll.setWidget(drawer)
@@ -944,15 +1000,15 @@ class GalleryWindow(QWidget):
             self._hamburger.hide()
 
     def _toggle_nav(self) -> None:
-        if self._modal.isVisible():
-            self._modal.hide()
+        if self._modal.is_open():
+            self._modal.close()
         else:
             self._modal.open()
 
     def _on_nav_changed(self, _index: int) -> None:
         # Selecting a destination dismisses the modal drawer (compact mode).
-        if self._modal.isVisible():
-            self._modal.hide()
+        if self._modal.is_open():
+            self._modal.close()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)

@@ -38,6 +38,7 @@ from ..widgets.button import (
 )
 from ..widgets.card import CardVariant, MdCard
 from ..widgets.checkbox import MdCheckbox
+from ..widgets.dialog import MdDialog
 from ..widgets.chips import (
     MdAssistChip,
     MdChipSet,
@@ -386,6 +387,32 @@ def _build_list() -> QWidget:
     return page
 
 
+def _build_dialog() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Dialog (click to open)"))
+    open_btn = MdFilledButton("Open dialog")
+    status = QLabel("(no result)")
+
+    def open_dialog():
+        # Parent the dialog to the top-level window so the scrim covers it.
+        host = page.window()
+        dlg = MdDialog(host, icon="delete", headline="Delete file?",
+                       supporting_text="This will permanently remove the file. "
+                       "This action cannot be undone.")
+        dlg.add_action("Cancel", accept=False)
+        dlg.add_action("Delete", accept=True)
+        dlg.accepted.connect(lambda: status.setText("Deleted"))
+        dlg.rejected.connect(lambda: status.setText("Cancelled"))
+        dlg.open()
+
+    open_btn.clicked.connect(open_dialog)
+    lay.addWidget(_row(open_btn))
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
 def _build_menu() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -507,6 +534,7 @@ _COMPONENTS = [
     ("Card", _build_card),
     ("Checkbox", _build_checkbox),
     ("Chips", _build_chips),
+    ("Dialog", _build_dialog),
     ("Divider", _build_divider),
     ("FAB", _build_fab),
     ("Field", _build_field),

@@ -72,10 +72,29 @@ from ..widgets.tabs import MdTabs
 from ..widgets.textfield import MdFilledTextField, MdOutlinedTextField
 
 
-def _section(title: str) -> QLabel:
-    label = QLabel(title)
-    label.setFont(font_for_role(TypescaleRole.TITLE_SMALL))
+def _themed_text_label(
+    text: str,
+    *,
+    role: ColorRole = ColorRole.ON_SURFACE,
+    typescale: TypescaleRole | None = None,
+) -> QLabel:
+    """A QLabel whose color follows the theme (re-applied on every change)."""
+    label = QLabel(text)
+    if typescale is not None:
+        label.setFont(font_for_role(typescale))
+
+    def apply() -> None:
+        label.setStyleSheet(f"color: {ThemeManager.instance().color(role).name()};")
+
+    apply()
+    ThemeManager.instance().themeChanged.connect(apply)
     return label
+
+
+def _section(title: str) -> QLabel:
+    return _themed_text_label(
+        title, role=ColorRole.ON_SURFACE_VARIANT, typescale=TypescaleRole.TITLE_SMALL
+    )
 
 
 def _row(*widgets: QWidget, spacing: int = 16) -> QWidget:
@@ -358,13 +377,8 @@ def _build_typography() -> QWidget:
     lay.setSpacing(2)
     for role in TypescaleRole:
         spec = spec_for(role)
-        lbl = QLabel(f"{role.value}  ·  {spec.size_rem * 16:.0f}px / {spec.weight}")
-        lbl.setFont(font_for_role(role))
-        lbl_role = ColorRole.ON_SURFACE
-        lbl.setStyleSheet(
-            f"color: {ThemeManager.instance().color(lbl_role).name()};"
-        )
-        lay.addWidget(lbl)
+        text = f"{role.value}  ·  {spec.size_rem * 16:.0f}px / {spec.weight}"
+        lay.addWidget(_themed_text_label(text, typescale=role))
     lay.addStretch(1)
     return page
 

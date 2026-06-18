@@ -202,11 +202,13 @@ class MdTabs(QWidget):
 
         y = self.height() - 0.5
         painter.drawLine(QPointF(0, y), QPointF(self.width(), y))
-        # Active indicator.
+        # Active indicator — primary tabs use a 3px bar, secondary tabs 2px
+        # (per the navigation-tab tokens).
         if self._ind_w > 0:
+            ind_h = 2.0 if self._secondary else float(_INDICATOR_H)
             x = self._ind - self._ind_w / 2.0
-            rect = QRectF(x, self.height() - _INDICATOR_H, self._ind_w, _INDICATOR_H)
-            radii = CornerRadii(_INDICATOR_H, _INDICATOR_H, 0.0, 0.0)
+            rect = QRectF(x, self.height() - ind_h, self._ind_w, ind_h)
+            radii = CornerRadii(ind_h, ind_h, 0.0, 0.0)
             painter.fillPath(rounded_path(rect, radii), theme.color(ColorRole.PRIMARY))
 
 

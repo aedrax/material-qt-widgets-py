@@ -37,7 +37,11 @@ class _FocusOverlay(QWidget):
     """Transparent overlay that draws the animated ring just outside the host."""
 
     def __init__(self, host: QWidget) -> None:
-        super().__init__(host.parentWidget())
+        # Parent to the host initially so the overlay is never a top-level
+        # window (host.parentWidget() is often None at construction, before the
+        # host is added to a layout). reposition() reparents it to the host's
+        # actual parent at show time so the ring can extend beyond the host.
+        super().__init__(host)
         self._host = host
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
@@ -62,10 +66,23 @@ class _FocusOverlay(QWidget):
         self.update()
 
     def reposition(self) -> None:
-        """Cover the host's geometry expanded by the outward offset + stroke."""
+        """Cover the host's geometry expanded by the outward offset + stroke.
+
+        The geometry is in the host's parent coordinate space, so keep the
+        overlay parented to the host's current parent (this also follows the
+        host when it is reparented between containers). With no parent there is
+        nothing to draw the ring against.
+        """
         host = self._host
-        geo = host.geometry()
+        parent = host.parentWidget()
+        if parent is None:
+            return
+        if self.parentWidget() is not parent:
+            self.setParent(parent)
+            if self._visible:
+                self.show()
         margin = OUTWARD_OFFSET + ACTIVE_WIDTH
+        geo = host.geometry()
         self.setGeometry(geo.adjusted(-margin, -margin, margin, margin))
         self.raise_()
 

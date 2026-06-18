@@ -71,3 +71,64 @@ def test_apply_app_palette(qapp):
     palette = qapp.palette()
     assert palette.color(QPalette.ColorRole.Highlight) == QColor("#6750a4")
     assert palette.color(QPalette.ColorRole.Base) == QColor("#ffffff")
+
+
+def test_set_and_clear_color_override(qapp):
+    tm = ThemeManager.instance()
+    tm.set_mode(ThemeMode.LIGHT)
+    tm.clear_overrides()
+    signals = []
+    tm.themeChanged.connect(lambda: signals.append(1))
+    tm.set_overrides({ColorRole.PRIMARY: "#ff0000"})
+    assert tm.color(ColorRole.PRIMARY) == QColor("#ff0000")
+    assert signals  # themeChanged fired
+    tm.clear_overrides()
+    assert tm.color(ColorRole.PRIMARY) == QColor("#6750a4")  # back to token value
+
+
+def test_override_accepts_qcolor_and_str(qapp):
+    tm = ThemeManager.instance()
+    tm.set_mode(ThemeMode.LIGHT)
+    tm.set_overrides({ColorRole.PRIMARY: QColor(0, 128, 128)})
+    assert tm.color(ColorRole.PRIMARY) == QColor(0, 128, 128)
+    tm.clear_overrides()
+
+
+def test_per_mode_override(qapp):
+    tm = ThemeManager.instance()
+    tm.clear_overrides()
+    # Override only in dark.
+    tm.set_overrides({ColorRole.PRIMARY: "#00ff00"}, mode=ThemeMode.DARK)
+    tm.set_mode(ThemeMode.LIGHT)
+    assert tm.color(ColorRole.PRIMARY) == QColor("#6750a4")  # light unaffected
+    tm.set_mode(ThemeMode.DARK)
+    assert tm.color(ColorRole.PRIMARY) == QColor("#00ff00")  # dark overridden
+    tm.clear_overrides()
+    tm.set_mode(ThemeMode.LIGHT)
+
+
+def test_override_propagates_to_palette(qapp):
+    from PySide6.QtGui import QPalette
+
+    tm = ThemeManager.instance()
+    tm.set_mode(ThemeMode.LIGHT)
+    tm.set_overrides({ColorRole.PRIMARY: "#ff0000"})
+    tm.apply_app_palette(qapp)
+    assert qapp.palette().color(QPalette.ColorRole.Highlight) == QColor("#ff0000")
+    tm.clear_overrides()
+    tm.apply_app_palette(qapp)
+
+
+def test_override_repaints_component(qapp):
+    from material_qt.widgets.button import MdFilledButton
+
+    tm = ThemeManager.instance()
+    tm.set_mode(ThemeMode.LIGHT)
+    tm.clear_overrides()
+    btn = MdFilledButton("X")
+    btn.resize(120, 40)
+    before = btn.grab().toImage().pixelColor(60, 20)
+    tm.set_overrides({ColorRole.PRIMARY: "#ff0000"})
+    after = btn.grab().toImage().pixelColor(60, 20)
+    assert before != after  # filled container (primary) changed
+    tm.clear_overrides()

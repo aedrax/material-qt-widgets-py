@@ -62,6 +62,7 @@ from ..widgets.radio import MdRadio
 from ..widgets.segmentedbutton import MdSegmentedButton, MdSegmentedButtonSet
 from ..widgets.slider import MdSlider
 from ..widgets.switch import MdSwitch
+from ..widgets.textfield import MdFilledTextField, MdOutlinedTextField
 
 
 def _section(title: str) -> QLabel:
@@ -308,6 +309,22 @@ def _build_chips() -> QWidget:
     return page
 
 
+def _build_text_field() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    f = MdFilledTextField(label="Name", supporting_text="As it appears on your ID")
+    f.setMinimumWidth(280)
+    o = MdOutlinedTextField(label="Email", text="a@b.com")
+    o.setMinimumWidth(280)
+    p = MdOutlinedTextField(label="Password", password=True, error=True,
+                            supporting_text="At least 8 characters")
+    p.setMinimumWidth(280)
+    for tf in (f, o, p):
+        lay.addWidget(tf)
+    lay.addStretch(1)
+    return page
+
+
 def _build_field() -> QWidget:
     from PySide6.QtWidgets import QLineEdit
 
@@ -442,6 +459,7 @@ _COMPONENTS = [
     ("Segmented", _build_segmented),
     ("Slider", _build_slider),
     ("Switch", _build_switch),
+    ("Text field", _build_text_field),
 ]
 
 

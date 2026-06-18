@@ -10,6 +10,7 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from ..theme.theme_manager import ThemeManager
 from ..theme.presets import PRESETS
+from ..core.responsive import ResponsiveHelper, WindowSizeClass, size_class_for
 from ..tokens.color import ColorRole
 from ..tokens.typography import TypescaleRole, spec_for
 from ..core.typography_util import font_for_role
@@ -712,6 +714,51 @@ def _hero(label: str) -> MdCard:
     return card
 
 
+_DRAWER_W = 360  # matches MdNavigationDrawer width
+_SCRIM_OPACITY = 0.32
+
+
+class _NavModal(QWidget):
+    """A modal navigation drawer overlay (compact/medium widths): scrim + the
+    drawer hosted in a left scroll panel. Dismisses on a scrim click."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self._scroll = QScrollArea(self)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self._scroll.setFixedWidth(_DRAWER_W)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.hide()
+
+    def host(self, drawer: QWidget) -> None:
+        self._scroll.setWidget(drawer)
+
+    def release(self) -> QWidget | None:
+        return self._scroll.takeWidget()
+
+    def open(self) -> None:
+        self.setGeometry(self.parentWidget().rect())
+        self._scroll.setGeometry(0, 0, _DRAWER_W, self.height())
+        self.raise_()
+        self.show()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._scroll.setGeometry(0, 0, _DRAWER_W, self.height())
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if event.position().x() > _DRAWER_W:  # clicked the scrim
+            self.hide()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        scrim = QColor(ThemeManager.instance().color(ColorRole.SCRIM))
+        scrim.setAlphaF(_SCRIM_OPACITY)
+        painter.fillRect(self.rect(), scrim)
+
+
 class GalleryWindow(QWidget):
     """Browsable gallery of all Material Qt components (catalog-style)."""
 
@@ -731,6 +778,11 @@ class GalleryWindow(QWidget):
         hl = QHBoxLayout(header)
         hl.setContentsMargins(16, 8, 16, 8)
         hl.setSpacing(4)
+        # Hamburger appears only at compact/medium widths (modal drawer).
+        self._hamburger = MdIconButton("menu")
+        self._hamburger.clicked.connect(self._toggle_nav)
+        self._hamburger.hide()
+        hl.addWidget(self._hamburger)
         title = QLabel("Material Qt")
         title.setFont(font_for_role(TypescaleRole.TITLE_LARGE))
         hl.addWidget(title)
@@ -767,6 +819,7 @@ class GalleryWindow(QWidget):
             scroll.setFrameShape(QScrollArea.Shape.NoFrame)
             self._stack.addWidget(scroll)
         self._drawer.changed.connect(self._stack.setCurrentIndex)
+        self._drawer.changed.connect(self._on_nav_changed)
 
         nav_scroll = QScrollArea()
         nav_scroll.setWidgetResizable(True)
@@ -779,14 +832,64 @@ class GalleryWindow(QWidget):
         body.addWidget(nav_scroll)
         body.addWidget(self._stack, 1)
         root.addLayout(body, 1)
+
+        # Responsive nav: persistent drawer at expanded+ (>=840dp), modal drawer
+        # behind a hamburger at compact/medium (per the M3 breakpoints).
+        self._modal = _NavModal(self)
+        self._compact: bool | None = None
+        self._responsive = ResponsiveHelper(self)
+        self._responsive.sizeClassChanged.connect(lambda *_: self._apply_responsive())
+
         # Open matching the material-web.dev catalog theme by default.
         self._apply_preset(_PRESET_NAMES[0])
         self._restyle()
+        self._apply_responsive()
 
     # -- selection (also used by tests) ------------------------------------
 
     def select(self, index: int) -> None:
         self._drawer._items[index].setChecked(True)
+
+    # -- responsive nav ----------------------------------------------------
+
+    def _apply_responsive(self) -> None:
+        """Persistent drawer at expanded+ widths; modal + hamburger below."""
+        compact = size_class_for(self.width()) in (
+            WindowSizeClass.COMPACT, WindowSizeClass.MEDIUM
+        )
+        if compact == self._compact:
+            return
+        self._compact = compact
+        if compact:
+            drawer = self._nav_scroll.takeWidget()
+            if drawer is not None:
+                self._modal.host(drawer)
+            self._nav_scroll.hide()
+            self._hamburger.show()
+        else:
+            self._modal.hide()
+            drawer = self._modal.release()
+            if drawer is not None:
+                self._nav_scroll.setWidget(drawer)
+            self._nav_scroll.show()
+            self._hamburger.hide()
+
+    def _toggle_nav(self) -> None:
+        if self._modal.isVisible():
+            self._modal.hide()
+        else:
+            self._modal.open()
+
+    def _on_nav_changed(self, _index: int) -> None:
+        # Selecting a destination dismisses the modal drawer (compact mode).
+        if self._modal.isVisible():
+            self._modal.hide()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        modal = getattr(self, "_modal", None)
+        if modal is not None and modal.isVisible():
+            modal.setGeometry(self.rect())
 
     def _toggle_theme(self) -> None:
         # Flip relative to the *actual* current theme (which may start in SYSTEM

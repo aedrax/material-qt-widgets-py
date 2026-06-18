@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from ..theme.theme_manager import ThemeManager
 from ..tokens.color import ColorRole
-from ..tokens.typography import TypescaleRole
+from ..tokens.typography import TypescaleRole, spec_for
 from ..core.typography_util import font_for_role
 from ..widgets.badge import MdBadge
 from ..widgets.button import (
@@ -352,6 +352,23 @@ def _build_tabs() -> QWidget:
     return page
 
 
+def _build_typography() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.setSpacing(2)
+    for role in TypescaleRole:
+        spec = spec_for(role)
+        lbl = QLabel(f"{role.value}  ·  {spec.size_rem * 16:.0f}px / {spec.weight}")
+        lbl.setFont(font_for_role(role))
+        lbl_role = ColorRole.ON_SURFACE
+        lbl.setStyleSheet(
+            f"color: {ThemeManager.instance().color(lbl_role).name()};"
+        )
+        lay.addWidget(lbl)
+    lay.addStretch(1)
+    return page
+
+
 def _build_text_field() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -601,6 +618,7 @@ _COMPONENTS = [
     ("Switch", _build_switch),
     ("Tabs", _build_tabs),
     ("Text field", _build_text_field),
+    ("Typography", _build_typography),
 ]
 
 

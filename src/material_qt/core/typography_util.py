@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtGui import QFont
+import os
+
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QWidget
 
 from ..tokens.typography import REM_PX, TypescaleRole, TypescaleSpec, spec_for
@@ -11,6 +13,22 @@ from ..tokens.typography import REM_PX, TypescaleRole, TypescaleSpec, spec_for
 # same numeric scale in Qt 6, so we can pass the value directly).
 _FALLBACK_FAMILIES = ["Roboto", "Noto Sans", "Segoe UI", "Helvetica Neue", "Arial"]
 
+# Roboto (Material's default typeface) is bundled so text renders correctly even
+# when it isn't installed system-wide. Registered once, lazily.
+_BUNDLED_ROBOTO = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), os.pardir, "assets", "Roboto.ttf")
+)
+_roboto_checked = False
+
+
+def _ensure_roboto() -> None:
+    global _roboto_checked
+    if _roboto_checked:
+        return
+    _roboto_checked = True
+    if "Roboto" not in QFontDatabase.families() and os.path.isfile(_BUNDLED_ROBOTO):
+        QFontDatabase.addApplicationFont(_BUNDLED_ROBOTO)
+
 
 def font_for(spec: TypescaleSpec) -> QFont:
     """Build a :class:`QFont` from a typescale spec.
@@ -18,6 +36,7 @@ def font_for(spec: TypescaleSpec) -> QFont:
     Uses pixel sizing (``size_rem * 16``), numeric weight, and letter spacing
     derived from the tracking token (rem -> px, applied as absolute spacing).
     """
+    _ensure_roboto()
     font = QFont()
     font.setFamily(spec.family)
     font.setFamilies([spec.family, *_FALLBACK_FAMILIES])

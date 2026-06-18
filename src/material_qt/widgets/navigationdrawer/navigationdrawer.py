@@ -33,7 +33,7 @@ _ITEM_H = 56
 _ICON = 24
 _PAD = 16
 _GAP = 12
-_DRAWER_W = 300
+_DRAWER_W = 360  # M3 navigation-drawer container-width
 
 
 class _DrawerItem(MaterialWidgetMixin, QAbstractButton):

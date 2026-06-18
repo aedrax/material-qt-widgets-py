@@ -765,7 +765,7 @@ class GalleryWindow(QWidget):
         nav_scroll.setWidgetResizable(True)
         nav_scroll.setWidget(self._drawer)
         nav_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        nav_scroll.setFixedWidth(300)
+        nav_scroll.setFixedWidth(360)
         nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._nav_scroll = nav_scroll
 

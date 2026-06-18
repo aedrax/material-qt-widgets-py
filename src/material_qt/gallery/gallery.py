@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..theme.theme_manager import ThemeManager
+from ..theme.presets import PRESETS
 from ..tokens.color import ColorRole
 from ..tokens.typography import TypescaleRole, spec_for
 from ..core.typography_util import font_for_role
@@ -686,8 +687,10 @@ COMPONENT_META: dict[str, tuple[str, str]] = {
     "Typography": ("format_size", "The Material 3 type scale."),
 }
 
-# Brand colors cycled by the app-bar palette button (showcases set_overrides).
-_BRAND_COLORS = [None, "#006A6A", "#3F51B5", "#7D5260", "#386A20"]
+# Theme presets cycled by the app-bar palette button. "Catalog" (the
+# material-web.dev default amber/olive theme) is first, so the gallery opens
+# matching the catalog; clicking the palette button cycles to "Baseline" and back.
+_PRESET_NAMES = ["Catalog", "Baseline"]
 
 
 def _hero(label: str) -> MdCard:
@@ -713,7 +716,7 @@ class GalleryWindow(QWidget):
         self.setWindowTitle("Material Qt — Gallery")
         self._labels = [label for label, _ in _COMPONENTS]
         ThemeManager.instance().themeChanged.connect(self._restyle)
-        self._brand_idx = 0
+        self._preset_idx = 0
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -772,6 +775,8 @@ class GalleryWindow(QWidget):
         body.addWidget(nav_scroll)
         body.addWidget(self._stack, 1)
         root.addLayout(body, 1)
+        # Open matching the material-web.dev catalog theme by default.
+        self._apply_preset(_PRESET_NAMES[0])
         self._restyle()
 
     # -- selection (also used by tests) ------------------------------------
@@ -784,15 +789,15 @@ class GalleryWindow(QWidget):
         # mode resolving to dark), so the first click always changes the theme.
         ThemeManager.instance().toggle_light_dark()
 
+    def _apply_preset(self, name: str) -> None:
+        light, dark = PRESETS[name]
+        ThemeManager.instance().set_palette(light, dark)
+
     def _cycle_brand(self) -> None:
-        # Cycle the `primary` role through a few brand colors (showcases the
-        # runtime override feature, like the catalog's palette control).
-        self._brand_idx = (self._brand_idx + 1) % len(_BRAND_COLORS)
-        color = _BRAND_COLORS[self._brand_idx]
-        if color is None:
-            ThemeManager.instance().clear_overrides()
-        else:
-            ThemeManager.instance().set_overrides({ColorRole.PRIMARY: color})
+        # Cycle the full theme preset (Catalog <-> Baseline), reskinning every
+        # component at once — like the catalog's theme control.
+        self._preset_idx = (self._preset_idx + 1) % len(_PRESET_NAMES)
+        self._apply_preset(_PRESET_NAMES[self._preset_idx])
 
     def _restyle(self) -> None:
         theme = ThemeManager.instance()

@@ -66,6 +66,7 @@ from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
 from ..widgets.segmentedbutton import MdSegmentedButton, MdSegmentedButtonSet
 from ..widgets.select import MdFilledSelect, MdOutlinedSelect
+from ..widgets.splitbutton import MdSplitButton, SplitButtonColor
 from ..widgets.slider import MdSlider
 from ..widgets.switch import MdSwitch
 from ..widgets.tabs import MdTabs
@@ -224,6 +225,23 @@ def _build_radio() -> QWidget:
         btn_group.addButton(r)
         gl.addWidget(_labeled(r, name))
     lay.addWidget(group)
+    lay.addStretch(1)
+    return page
+
+
+def _build_split_button() -> QWidget:
+    from ..widgets.menu import MdMenu, MdMenuItem
+
+    page = _page()
+    lay = page.layout()
+    for color in SplitButtonColor:
+        lay.addWidget(_section(color.value))
+        sb = MdSplitButton("Save", color=color, icon="save")
+        menu = MdMenu(sb)
+        for label in ("Save as draft", "Save and close", "Save a copy"):
+            menu.add_item(MdMenuItem(label))
+        sb.set_menu(menu)
+        lay.addWidget(_row(sb))
     lay.addStretch(1)
     return page
 
@@ -629,6 +647,7 @@ _COMPONENTS = [
     ("Segmented", _build_segmented),
     ("Select", _build_select),
     ("Slider", _build_slider),
+    ("Split button", _build_split_button),
     ("Switch", _build_switch),
     ("Tabs", _build_tabs),
     ("Text field", _build_text_field),

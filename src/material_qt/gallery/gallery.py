@@ -65,6 +65,7 @@ from ..widgets.navigationtab import MdNavigationTab
 from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
 from ..widgets.segmentedbutton import MdSegmentedButton, MdSegmentedButtonSet
+from ..widgets.select import MdFilledSelect, MdOutlinedSelect
 from ..widgets.slider import MdSlider
 from ..widgets.switch import MdSwitch
 from ..widgets.tabs import MdTabs
@@ -236,6 +237,24 @@ def _build_segmented() -> QWidget:
     for label in ("Bold", "Italic", "Underline"):
         multi.add_segment(MdSegmentedButton(label))
     lay.addWidget(multi)
+    lay.addStretch(1)
+    return page
+
+
+def _build_select() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    f = MdFilledSelect(label="Fruit", supporting_text="Pick one")
+    for x in ("Apple", "Banana", "Cherry", "Date"):
+        f.add_option(x)
+    f.setMinimumWidth(280)
+    o = MdOutlinedSelect(label="Country")
+    for x in ("USA", "Canada", "Mexico"):
+        o.add_option(x)
+    o.set_value("Canada")
+    o.setMinimumWidth(280)
+    lay.addWidget(f)
+    lay.addWidget(o)
     lay.addStretch(1)
     return page
 
@@ -577,6 +596,7 @@ _COMPONENTS = [
     ("Progress", _build_progress),
     ("Radio", _build_radio),
     ("Segmented", _build_segmented),
+    ("Select", _build_select),
     ("Slider", _build_slider),
     ("Switch", _build_switch),
     ("Tabs", _build_tabs),

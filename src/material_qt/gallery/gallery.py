@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QVariantAnimation
+from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication,
@@ -950,9 +950,13 @@ class GalleryWindow(QWidget):
         nav_scroll.setWidgetResizable(True)
         nav_scroll.setWidget(self._drawer)
         nav_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        nav_scroll.setFixedWidth(360)
+        # Width is animated on breakpoint changes, so cap (not fix) it.
+        nav_scroll.setMinimumWidth(0)
+        nav_scroll.setMaximumWidth(_DRAWER_W)
         nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._nav_scroll = nav_scroll
+        self._nav_anim = QPropertyAnimation(nav_scroll, b"maximumWidth", self)
+        self._nav_anim.finished.connect(self._on_nav_anim_finished)
 
         body.addWidget(nav_scroll)
         body.addWidget(self._stack, 1)
@@ -968,7 +972,7 @@ class GalleryWindow(QWidget):
         # Open matching the material-web.dev catalog theme by default.
         self._apply_preset(_PRESET_NAMES[0])
         self._restyle()
-        self._apply_responsive()
+        self._apply_responsive(animate=False)
 
     # -- selection (also used by tests) ------------------------------------
 
@@ -977,27 +981,59 @@ class GalleryWindow(QWidget):
 
     # -- responsive nav ----------------------------------------------------
 
-    def _apply_responsive(self) -> None:
-        """Persistent drawer at expanded+ widths; modal + hamburger below."""
+    def _apply_responsive(self, animate: bool = True) -> None:
+        """Persistent drawer at expanded+ widths; modal + hamburger below.
+
+        Crossing the breakpoint animates the persistent drawer's width (slide
+        in/out) rather than popping.
+        """
         compact = size_class_for(self.width()) in (
             WindowSizeClass.COMPACT, WindowSizeClass.MEDIUM
         )
         if compact == self._compact:
             return
         self._compact = compact
+        self._nav_anim.stop()
         if compact:
-            drawer = self._nav_scroll.takeWidget()
-            if drawer is not None:
-                self._modal.host(drawer)
-            self._nav_scroll.hide()
+            # Collapse the side drawer to 0 width, then move it into the modal.
             self._hamburger.show()
+            self._animate_nav_to(0, animate)
         else:
-            self._modal.reset()
+            # Bring the drawer back into the side scroll and expand it in.
             drawer = self._modal.release()
             if drawer is not None:
                 self._nav_scroll.setWidget(drawer)
-            self._nav_scroll.show()
+            self._modal.reset()
             self._hamburger.hide()
+            self._nav_scroll.setMaximumWidth(0)  # start collapsed, then slide in
+            self._nav_scroll.show()
+            self._animate_nav_to(_DRAWER_W, animate)
+
+    def _animate_nav_to(self, target: int, animate: bool) -> None:
+        if not (animate and MOTION_ENABLED):
+            self._nav_scroll.setMaximumWidth(target)
+            self._on_nav_anim_finished()
+            return
+        collapsing = target == 0
+        self._nav_anim.setStartValue(self._nav_scroll.maximumWidth())
+        self._nav_anim.setEndValue(target)
+        self._nav_anim.setDuration(
+            duration_ms(Duration.SHORT4 if collapsing else Duration.LONG1)
+        )
+        self._nav_anim.setEasingCurve(easing_curve(
+            Easing.EMPHASIZED_ACCELERATE if collapsing else Easing.EMPHASIZED_DECELERATE
+        ))
+        self._nav_anim.start()
+
+    def _on_nav_anim_finished(self) -> None:
+        # When the side drawer has finished collapsing, hide it and hand the
+        # drawer widget to the modal for compact-width use.
+        if self._compact and self._nav_scroll.maximumWidth() == 0:
+            self._nav_scroll.hide()
+            drawer = self._nav_scroll.takeWidget()
+            if drawer is not None:
+                self._modal.host(drawer)
+            self._nav_scroll.setMaximumWidth(_DRAWER_W)  # reset for next expand
 
     def _toggle_nav(self) -> None:
         if self._modal.is_open():

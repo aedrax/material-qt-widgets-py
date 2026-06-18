@@ -59,6 +59,8 @@ from ..widgets.iconbutton import (
 from ..widgets.item import MdItem
 from ..widgets.list import MdList, MdListItem
 from ..widgets.menu import MdMenu, MdMenuItem
+from ..widgets.navigationbar import MdNavigationBar
+from ..widgets.navigationdrawer import MdNavigationDrawer
 from ..widgets.navigationtab import MdNavigationTab
 from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
@@ -435,6 +437,32 @@ def _build_menu() -> QWidget:
     return page
 
 
+def _build_navigation_bar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Navigation bar"))
+    bar = MdNavigationBar()
+    for label, icon in [("Home", "home"), ("Search", "search"),
+                        ("Saved", "bookmark"), ("Profile", "person")]:
+        bar.add_destination(label, icon=icon)
+    lay.addWidget(bar)
+    lay.addStretch(1)
+    return page
+
+
+def _build_navigation_drawer() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Navigation drawer"))
+    drawer = MdNavigationDrawer(headline="Mail")
+    for label, icon in [("Inbox", "inbox"), ("Starred", "star"),
+                        ("Sent", "send"), ("Drafts", "drafts")]:
+        drawer.add_destination(label, icon=icon)
+    lay.addWidget(drawer)
+    lay.addStretch(1)
+    return page
+
+
 def _build_navigation_tab() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -543,6 +571,8 @@ _COMPONENTS = [
     ("Item", _build_item),
     ("List", _build_list),
     ("Menu", _build_menu),
+    ("Navigation bar", _build_navigation_bar),
+    ("Navigation drawer", _build_navigation_drawer),
     ("Navigation tab", _build_navigation_tab),
     ("Progress", _build_progress),
     ("Radio", _build_radio),

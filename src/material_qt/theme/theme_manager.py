@@ -171,6 +171,23 @@ class ThemeManager(QObject):
             target.clear()
         self._notify()
 
+    def set_palette(
+        self,
+        light: Mapping[ColorRole | str, QColor | str] | None,
+        dark: Mapping[ColorRole | str, QColor | str] | None,
+    ) -> None:
+        """Apply a full theme preset: replace all overrides with ``light``/``dark``
+        role maps. Passing ``None`` for a mode uses the baseline token scheme for
+        it. This is how named presets (see :mod:`material_qt.theme.presets`) — and
+        the catalog theme — are applied."""
+        self._overrides_light = (
+            {ColorRole(k): QColor(v) for k, v in light.items()} if light else {}
+        )
+        self._overrides_dark = (
+            {ColorRole(k): QColor(v) for k, v in dark.items()} if dark else {}
+        )
+        self._notify()
+
     def overrides(self, *, dark: bool | None = None) -> dict[ColorRole, QColor]:
         """A copy of the active (or specified) mode's overrides, for inspection."""
         is_dark = self._scheme.is_dark if dark is None else dark

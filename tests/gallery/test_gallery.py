@@ -47,18 +47,25 @@ def test_toggle_button_reflects_starting_theme(qtbot):
     assert ThemeManager.instance().is_dark is False
 
 
-def test_palette_button_cycles_brand_override(qtbot):
-    ThemeManager.instance().set_mode(ThemeMode.LIGHT)
-    ThemeManager.instance().clear_overrides()
-    w = GalleryWindow()
-    qtbot.addWidget(w)
+def test_gallery_defaults_to_catalog_theme(qtbot):
     from material_qt.tokens.color import ColorRole
 
-    baseline = ThemeManager.instance().color(ColorRole.PRIMARY).name()
-    w._cycle_brand()  # -> first non-None brand color
-    assert ThemeManager.instance().color(ColorRole.PRIMARY).name() != baseline
-    # Cycle back around to None (clears the override).
-    for _ in range(len(__import__("material_qt.gallery.gallery",
-                                  fromlist=["_BRAND_COLORS"])._BRAND_COLORS) - 1):
-        w._cycle_brand()
-    assert ThemeManager.instance().color(ColorRole.PRIMARY).name() == baseline
+    ThemeManager.instance().set_mode(ThemeMode.LIGHT)
+    w = GalleryWindow()
+    qtbot.addWidget(w)
+    # Opens on the catalog (amber) theme: light primary #7f5700, surface #fff8f3.
+    assert ThemeManager.instance().color(ColorRole.PRIMARY).name() == "#7f5700"
+    assert ThemeManager.instance().color(ColorRole.SURFACE).name() == "#fff8f3"
+
+
+def test_palette_button_cycles_theme_preset(qtbot):
+    from material_qt.tokens.color import ColorRole
+
+    ThemeManager.instance().set_mode(ThemeMode.LIGHT)
+    w = GalleryWindow()
+    qtbot.addWidget(w)
+    assert ThemeManager.instance().color(ColorRole.PRIMARY).name() == "#7f5700"  # Catalog
+    w._cycle_brand()  # -> Baseline (token primary)
+    assert ThemeManager.instance().color(ColorRole.PRIMARY).name() == "#6750a4"
+    w._cycle_brand()  # -> back to Catalog
+    assert ThemeManager.instance().color(ColorRole.PRIMARY).name() == "#7f5700"

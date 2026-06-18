@@ -57,6 +57,7 @@ from ..widgets.iconbutton import (
 )
 from ..widgets.item import MdItem
 from ..widgets.list import MdList, MdListItem
+from ..widgets.menu import MdMenu, MdMenuItem
 from ..widgets.navigationtab import MdNavigationTab
 from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
@@ -366,6 +367,28 @@ def _build_list() -> QWidget:
     return page
 
 
+def _build_menu() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Menu (click to open)"))
+    trigger = MdFilledButton("Open menu")
+    status = QLabel("(no selection)")
+
+    def open_menu():
+        menu = MdMenu(trigger)
+        for label, icon in [("Cut", "content_cut"), ("Copy", "content_copy"),
+                            ("Paste", "content_paste"), ("Delete", "delete")]:
+            menu.add_item(MdMenuItem(label, leading_icon=icon))
+        menu.selected.connect(lambda t: status.setText(f"Selected: {t}"))
+        menu.open_at(trigger)
+
+    trigger.clicked.connect(open_menu)
+    lay.addWidget(_row(trigger))
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
 def _build_navigation_tab() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -472,6 +495,7 @@ _COMPONENTS = [
     ("Icon button", _build_icon_button),
     ("Item", _build_item),
     ("List", _build_list),
+    ("Menu", _build_menu),
     ("Navigation tab", _build_navigation_tab),
     ("Progress", _build_progress),
     ("Radio", _build_radio),

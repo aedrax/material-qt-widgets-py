@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication,
@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QScrollArea,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -99,16 +101,83 @@ def _section(title: str) -> QLabel:
     )
 
 
+class _FlowLayout(QLayout):
+    """A layout that lays children left-to-right and wraps to new lines — so
+    showcase rows reflow responsively instead of clipping at narrow widths."""
+
+    def __init__(self, parent: QWidget | None = None, *, hspacing: int = 16,
+                 vspacing: int = 16) -> None:
+        super().__init__(parent)
+        self._items: list = []
+        self._hs = hspacing
+        self._vs = vspacing
+
+    def addItem(self, item) -> None:  # noqa: N802
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, i):  # noqa: N802
+        return self._items[i] if 0 <= i < len(self._items) else None
+
+    def takeAt(self, i):  # noqa: N802
+        return self._items.pop(i) if 0 <= i < len(self._items) else None
+
+    def expandingDirections(self):  # noqa: N802
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return self._do_layout(QRect(0, 0, width, 0), test=True)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
+        super().setGeometry(rect)
+        self._do_layout(rect, test=False)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        m = self.contentsMargins()
+        return size + QSize(m.left() + m.right(), m.top() + m.bottom())
+
+    def _do_layout(self, rect: QRect, *, test: bool) -> int:
+        m = self.contentsMargins()
+        x = rect.x() + m.left()
+        y = rect.y() + m.top()
+        right = rect.right() - m.right()
+        line_h = 0
+        for item in self._items:
+            hint = item.sizeHint()
+            w, h = hint.width(), hint.height()
+            if line_h and x + w > right:
+                x = rect.x() + m.left()
+                y += line_h + self._vs
+                line_h = 0
+            if not test:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += w + self._hs
+            line_h = max(line_h, h)
+        return y + line_h + m.bottom() - rect.y()
+
+
 def _row(*widgets: QWidget, spacing: int = 16) -> QWidget:
     w = QWidget()
-    lay = QHBoxLayout(w)
-    # Generous margins so elevation drop-shadows (up to FAB level-3) aren't
-    # clipped by this row widget's bounds — Qt clips children to the parent rect.
+    # Flow layout so rows wrap when narrow; generous margins so elevation
+    # drop-shadows (up to FAB level-3) aren't clipped by the row's bounds.
+    lay = _FlowLayout(w, hspacing=spacing, vspacing=spacing)
     lay.setContentsMargins(10, 8, 10, 16)
-    lay.setSpacing(spacing)
     for widget in widgets:
         lay.addWidget(widget)
-    lay.addStretch(1)
+    sp = w.sizePolicy()
+    sp.setHeightForWidth(True)
+    w.setSizePolicy(sp)
     return w
 
 

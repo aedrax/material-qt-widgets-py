@@ -112,6 +112,10 @@ class MdIconButton(MaterialWidgetMixin, QAbstractButton):
 
     # -- properties --------------------------------------------------------
 
+    @property
+    def icon_name(self) -> str:
+        return self._icon_name
+
     def set_icon(self, name: str) -> None:
         self._icon_name = name
         self.update()

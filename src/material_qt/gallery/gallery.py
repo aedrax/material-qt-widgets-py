@@ -16,8 +16,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QScrollArea,
     QStackedWidget,
     QVBoxLayout,
@@ -655,79 +653,156 @@ _COMPONENTS = [
 ]
 
 
+# Per-component icon (Material Symbols ligature) + one-line description, used for
+# the nav drawer destinations and each page's hero header — mirroring the
+# material-web.dev catalog.
+COMPONENT_META: dict[str, tuple[str, str]] = {
+    "Badge": ("notifications", "Small status indicator overlaid on an anchor."),
+    "Button": ("smart_button", "Five common button variants for actions."),
+    "Card": ("space_dashboard", "Container for related content and actions."),
+    "Checkbox": ("check_box", "Select one or more items from a set."),
+    "Chips": ("label", "Compact elements for input, filters, and actions."),
+    "Dialog": ("web_asset", "Modal surface for focused tasks and decisions."),
+    "Divider": ("horizontal_rule", "Thin line that groups content."),
+    "FAB": ("add_circle", "Floating action button for the primary action."),
+    "Field": ("text_fields", "Chrome shared by text fields and selects."),
+    "Icon": ("star", "Material Symbols icon rendering."),
+    "Icon button": ("touch_app", "Icon-only buttons, optionally toggleable."),
+    "Item": ("list_alt", "Content layout primitive with slots."),
+    "List": ("list", "Vertical index of text and images."),
+    "Menu": ("menu", "Popup list of choices anchored to a control."),
+    "Navigation bar": ("bottom_navigation", "Bottom bar switching destinations."),
+    "Navigation drawer": ("menu_open", "Side panel of navigation destinations."),
+    "Navigation tab": ("tab", "A single navigation destination."),
+    "Progress": ("progress_activity", "Linear and circular progress."),
+    "Radio": ("radio_button_checked", "Select one option from a set."),
+    "Segmented": ("splitscreen", "Connected toggle buttons for choices."),
+    "Select": ("arrow_drop_down_circle", "Dropdown to pick from options."),
+    "Slider": ("tune", "Select a value from a range."),
+    "Split button": ("more_horiz", "Primary action plus a dropdown."),
+    "Switch": ("toggle_on", "Toggle the state of a single item."),
+    "Tabs": ("tab", "Organize content across primary/secondary tabs."),
+    "Text field": ("text_fields", "Let users enter and edit text."),
+    "Typography": ("format_size", "The Material 3 type scale."),
+}
+
+# Brand colors cycled by the app-bar palette button (showcases set_overrides).
+_BRAND_COLORS = [None, "#006A6A", "#3F51B5", "#7D5260", "#386A20"]
+
+
+def _hero(label: str) -> MdCard:
+    """A catalog-style hero header: component name + description in a surface."""
+    _icon, desc = COMPONENT_META.get(label, ("widgets", ""))
+    card = MdCard(variant=CardVariant.FILLED)
+    title = _themed_text_label(label, role=ColorRole.ON_SURFACE,
+                               typescale=TypescaleRole.HEADLINE_MEDIUM)
+    card.add_widget(title)
+    if desc:
+        d = _themed_text_label(desc, role=ColorRole.ON_SURFACE_VARIANT,
+                               typescale=TypescaleRole.BODY_MEDIUM)
+        d.setWordWrap(True)
+        card.add_widget(d)
+    return card
+
+
 class GalleryWindow(QWidget):
-    """Browsable gallery of all Material Qt components."""
+    """Browsable gallery of all Material Qt components (catalog-style)."""
 
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Material Qt — Gallery")
+        self._labels = [label for label, _ in _COMPONENTS]
         ThemeManager.instance().themeChanged.connect(self._restyle)
+        self._brand_idx = 0
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Header.
+        # -- App bar: title + theme toggle + brand-color (palette) action ----
         header = QWidget()
         hl = QHBoxLayout(header)
-        hl.setContentsMargins(24, 16, 24, 16)
+        hl.setContentsMargins(16, 8, 16, 8)
+        hl.setSpacing(4)
         title = QLabel("Material Qt")
         title.setFont(font_for_role(TypescaleRole.TITLE_LARGE))
         hl.addWidget(title)
         hl.addStretch(1)
-        self._theme_btn = MdFilledTonalButton("Dark mode", icon="dark_mode")
+        self._theme_btn = MdIconButton("dark_mode")
         self._theme_btn.clicked.connect(self._toggle_theme)
+        self._palette_btn = MdIconButton("palette")
+        self._palette_btn.clicked.connect(self._cycle_brand)
         hl.addWidget(self._theme_btn)
+        hl.addWidget(self._palette_btn)
         root.addWidget(header)
         self._header = header
 
+        # -- Body: nav drawer (scrollable) + content stack -------------------
         body = QHBoxLayout()
         body.setContentsMargins(0, 0, 0, 0)
         body.setSpacing(0)
 
-        self._nav = QListWidget()
-        self._nav.setFixedWidth(200)
+        self._drawer = MdNavigationDrawer(headline="Components")
         self._stack = QStackedWidget()
         for label, builder in _COMPONENTS:
-            QListWidgetItem(label, self._nav)
+            icon, _desc = COMPONENT_META.get(label, ("widgets", ""))
+            self._drawer.add_destination(label, icon=icon)
+            # Each page = hero header + the component showcase, scrollable.
+            page = QWidget()
+            pl = QVBoxLayout(page)
+            pl.setContentsMargins(28, 24, 28, 24)
+            pl.setSpacing(16)
+            pl.addWidget(_hero(label))
+            pl.addWidget(builder(), 1)
             scroll = QScrollArea()
             scroll.setWidgetResizable(True)
-            scroll.setWidget(builder())
+            scroll.setWidget(page)
             scroll.setFrameShape(QScrollArea.Shape.NoFrame)
             self._stack.addWidget(scroll)
-        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
-        self._nav.setCurrentRow(0)
+        self._drawer.changed.connect(self._stack.setCurrentIndex)
 
-        body.addWidget(self._nav)
+        nav_scroll = QScrollArea()
+        nav_scroll.setWidgetResizable(True)
+        nav_scroll.setWidget(self._drawer)
+        nav_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        nav_scroll.setFixedWidth(300)
+        nav_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._nav_scroll = nav_scroll
+
+        body.addWidget(nav_scroll)
         body.addWidget(self._stack, 1)
         root.addLayout(body, 1)
         self._restyle()
+
+    # -- selection (also used by tests) ------------------------------------
+
+    def select(self, index: int) -> None:
+        self._drawer._items[index].setChecked(True)
 
     def _toggle_theme(self) -> None:
         # Flip relative to the *actual* current theme (which may start in SYSTEM
         # mode resolving to dark), so the first click always changes the theme.
         ThemeManager.instance().toggle_light_dark()
 
+    def _cycle_brand(self) -> None:
+        # Cycle the `primary` role through a few brand colors (showcases the
+        # runtime override feature, like the catalog's palette control).
+        self._brand_idx = (self._brand_idx + 1) % len(_BRAND_COLORS)
+        color = _BRAND_COLORS[self._brand_idx]
+        if color is None:
+            ThemeManager.instance().clear_overrides()
+        else:
+            ThemeManager.instance().set_overrides({ColorRole.PRIMARY: color})
+
     def _restyle(self) -> None:
-        # Paint the window and nav with theme surface colors.
         theme = ThemeManager.instance()
-        # Keep the toggle button label/icon in sync with the real theme state.
         dark = theme.is_dark
-        self._theme_btn.setText("Light mode" if dark else "Dark mode")
         self._theme_btn.set_icon("light_mode" if dark else "dark_mode")
         bg = theme.color(ColorRole.SURFACE).name()
-        on = theme.color(ColorRole.ON_SURFACE).name()
-        nav_bg = theme.color(ColorRole.SURFACE_CONTAINER_LOW).name()
-        sel = theme.color(ColorRole.SECONDARY_CONTAINER).name()
-        on_sel = theme.color(ColorRole.ON_SECONDARY_CONTAINER).name()
+        bar_bg = theme.color(ColorRole.SURFACE_CONTAINER).name()
         self.setStyleSheet(f"GalleryWindow {{ background: {bg}; }}")
-        self._header.setStyleSheet(f"background: {nav_bg};")
-        self._nav.setStyleSheet(
-            f"QListWidget {{ background: {nav_bg}; color: {on}; border: none;"
-            f" outline: none; padding: 8px; }}"
-            f" QListWidget::item {{ padding: 10px 12px; border-radius: 8px; }}"
-            f" QListWidget::item:selected {{ background: {sel}; color: {on_sel}; }}"
-        )
+        self._header.setStyleSheet(f"background: {bar_bg};")
+        self._nav_scroll.setStyleSheet("QScrollArea { border: none; }")
 
 
 def main() -> int:

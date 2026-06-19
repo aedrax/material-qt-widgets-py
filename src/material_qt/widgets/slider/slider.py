@@ -26,7 +26,11 @@ from ...theme.theme_manager import ThemeManager
 _TRACK_H = 4
 _HANDLE = 20
 _STATE_LAYER = 40
-_WIDGET_H = 40
+_BAND = 40  # vertical band housing the track, handle, and state layer
+# Horizontal padding so the 40px state layer never clips at the track ends.
+_MARGIN = _STATE_LAYER / 2.0
+_LABEL_H = 28
+_LABEL_GAP = 4
 _DISABLED_OPACITY = 0.38
 
 
@@ -42,8 +46,10 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         value: int = 0,
         step: int = 0,
         ticks: bool = False,
+        labeled: bool = False,
     ) -> None:
         super().__init__(parent)
+        self._labeled = labeled
         self.setOrientation(Qt.Orientation.Horizontal)
         self.setMinimum(minimum)
         self.setMaximum(maximum)
@@ -60,11 +66,14 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
 
     # -- geometry ----------------------------------------------------------
 
+    def _reserve(self) -> float:
+        """Vertical space reserved above the band for the value label."""
+        return (_LABEL_H + _LABEL_GAP) if self._labeled else 0.0
+
     def _track_rect(self) -> QRectF:
-        margin = _HANDLE / 2.0
-        cy = self.height() / 2.0
+        cy = self._reserve() + _BAND / 2.0
         return QRectF(
-            margin, cy - _TRACK_H / 2.0, self.width() - 2 * margin, _TRACK_H
+            _MARGIN, cy - _TRACK_H / 2.0, self.width() - 2 * _MARGIN, _TRACK_H
         )
 
     def _value_fraction(self) -> float:
@@ -93,10 +102,10 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
     # -- sizing ------------------------------------------------------------
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(200, _WIDGET_H)
+        return QSize(200, int(_BAND + self._reserve()))
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(80, _WIDGET_H)
+        return QSize(80, int(_BAND + self._reserve()))
 
     # -- interaction -------------------------------------------------------
 
@@ -205,8 +214,8 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         painter.setBrush(handle_color)
         painter.drawEllipse(QPointF(hx, cy), _HANDLE / 2.0, _HANDLE / 2.0)
 
-        # Value label while interacting.
-        if self._dragging and enabled:
+        # Value label while interacting (opt-in via ``labeled``).
+        if self._dragging and enabled and self._labeled:
             self._paint_value_label(painter, hx, cy, theme)
 
     def _paint_value_label(self, painter: QPainter, hx: float, cy: float, theme) -> None:
@@ -214,9 +223,9 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         painter.setFont(self._label_font)
         metrics = QFontMetrics(self._label_font)
         tw = metrics.horizontalAdvance(text) + 16
-        th = 28
+        th = _LABEL_H
         bx = hx - tw / 2.0
-        by = cy - _HANDLE / 2.0 - th - 4
+        by = cy - _HANDLE / 2.0 - th - _LABEL_GAP
         rect = QRectF(bx, by, tw, th)
         painter.setBrush(theme.color(ColorRole.PRIMARY))
         painter.setPen(Qt.PenStyle.NoPen)

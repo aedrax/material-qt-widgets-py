@@ -26,7 +26,11 @@ from ...theme.theme_manager import ThemeManager
 _TRACK_H = 4
 _HANDLE = 20
 _STATE_LAYER = 40
-_WIDGET_H = 40
+_BAND = 40  # vertical band housing the track, handles, and state layers
+# Horizontal padding so the 40px state layer never clips at the track ends.
+_MARGIN = _STATE_LAYER / 2.0
+_LABEL_H = 28
+_LABEL_GAP = 4
 _DISABLED_OPACITY = 0.38
 
 
@@ -44,8 +48,10 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         low: int = 0,
         high: int = 100,
         step: int = 0,
+        labeled: bool = False,
     ) -> None:
         super().__init__(parent)
+        self._labeled = labeled
         self._min = minimum
         self._max = maximum
         self._step = step
@@ -86,10 +92,13 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
 
     # -- geometry ----------------------------------------------------------
 
+    def _reserve(self) -> float:
+        """Vertical space reserved above the band for the value label."""
+        return (_LABEL_H + _LABEL_GAP) if self._labeled else 0.0
+
     def _track_rect(self) -> QRectF:
-        margin = _HANDLE / 2.0
-        cy = self.height() / 2.0
-        return QRectF(margin, cy - _TRACK_H / 2.0, self.width() - 2 * margin, _TRACK_H)
+        cy = self._reserve() + _BAND / 2.0
+        return QRectF(_MARGIN, cy - _TRACK_H / 2.0, self.width() - 2 * _MARGIN, _TRACK_H)
 
     def _fraction(self, value: int) -> float:
         span = self._max - self._min
@@ -125,10 +134,10 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
     # -- sizing ------------------------------------------------------------
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(200, _WIDGET_H)
+        return QSize(200, int(_BAND + self._reserve()))
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(80, _WIDGET_H)
+        return QSize(80, int(_BAND + self._reserve()))
 
     # -- interaction -------------------------------------------------------
 
@@ -207,7 +216,7 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
             painter.setBrush(handle_color)
             painter.drawEllipse(QPointF(x, cy), _HANDLE / 2.0, _HANDLE / 2.0)
 
-        if self._active is not None and enabled:
+        if self._active is not None and enabled and self._labeled:
             value = self._low if self._active == "low" else self._high
             self._paint_value_label(painter, self._handle_x(value), cy, value, theme)
 
@@ -215,8 +224,8 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         text = str(value)
         painter.setFont(self._label_font)
         tw = QFontMetrics(self._label_font).horizontalAdvance(text) + 16
-        th = 28
-        rect = QRectF(hx - tw / 2.0, cy - _HANDLE / 2.0 - th - 4, tw, th)
+        th = _LABEL_H
+        rect = QRectF(hx - tw / 2.0, cy - _HANDLE / 2.0 - th - _LABEL_GAP, tw, th)
         painter.setBrush(theme.color(ColorRole.PRIMARY))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawRoundedRect(rect, th / 2.0, th / 2.0)

@@ -37,7 +37,7 @@ from ..widgets.badge import MdBadge
 from ..widgets.banner import MdBanner
 from ..widgets.bottomsheet import MdBottomSheet
 from ..widgets.buttongroup import MdButtonGroup
-from ..widgets.carousel import MdCarousel
+from ..widgets.carousel import MdCarousel, MdWeightedCarousel
 from ..widgets.expansionpanel import MdExpansionPanel
 from ..widgets.fabmenu import MdFabMenu
 from ..widgets.loadingindicator import MdLoadingIndicator
@@ -932,6 +932,18 @@ def _build_carousel() -> QWidget:
     )
     lay.addWidget(carousel)
     lay.addWidget(status)
+
+    lay.addWidget(_section("Multi-browse — weights [3, 2, 1] (items resize as you scroll)"))
+    multi = MdWeightedCarousel(weights=[3, 2, 1])
+    for name in names:
+        multi.add_tile(name)
+    lay.addWidget(multi)
+
+    lay.addWidget(_section("Hero — weights [6, 1]"))
+    hero = MdWeightedCarousel(weights=[6, 1])
+    for name in names:
+        hero.add_tile(name)
+    lay.addWidget(hero)
     lay.addStretch(1)
     return page
 

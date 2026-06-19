@@ -189,9 +189,10 @@ class _FlowLayout(QLayout):
 def _row(*widgets: QWidget, spacing: int = 16) -> QWidget:
     w = QWidget()
     # Flow layout so rows wrap when narrow; generous margins so elevation
-    # drop-shadows (up to FAB level-3) aren't clipped by the row's bounds.
+    # drop-shadows aren't clipped by the row's bounds — sized for a hovered FAB
+    # (level-4: ~20px blur, 6px down-offset), the largest shadow shown in a row.
     lay = _FlowLayout(w, hspacing=spacing, vspacing=spacing)
-    lay.setContentsMargins(10, 8, 10, 16)
+    lay.setContentsMargins(20, 14, 20, 24)
     for widget in widgets:
         lay.addWidget(widget)
     sp = w.sizePolicy()

@@ -1,0 +1,401 @@
+"""Material 3 modal time picker for QtWidgets.
+
+Ports the Material 3 modal time picker (cf. Flutter's ``showTimePicker``): a modal
+overlay with an elevated ``surface-container-high`` panel containing a time
+display (selectable hour / minute fields + an AM/PM toggle) and a clock dial.
+Clicking or dragging on the dial sets the active field. ``accepted(QTime)`` fires
+on OK, ``rejected`` on Cancel/dismiss.
+
+The clock dial uses a north-up, clockwise layout: 12 o'clock at the top, 3 to the
+right. The screen-vector -> value math (``atan2(dx, -dy)``) is exposed as pure
+functions :func:`angle_to_hour` / :func:`angle_to_minute` so the cardinal mapping
+is unit-tested (top=12, right=3, bottom=6, left=9).
+
+Deferred (scaffold): the 24-hour dual-ring dial (inner ring) and the text-input
+variant — this is the 12-hour + AM/PM dial only.
+"""
+
+from __future__ import annotations
+
+import math
+
+from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTime, QVariantAnimation, Signal
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+
+from ...core.material_widget import MaterialWidgetMixin
+from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
+from ...core.typography_util import font_for_role
+from ...tokens.color import ColorRole
+from ...tokens.elevation import ElevationLevel
+from ...tokens.motion import Duration, Easing
+from ...tokens.shape import ShapeScale
+from ...tokens.typography import TypescaleRole
+from ...theme.theme_manager import ThemeManager
+from ..button import MdTextButton
+
+_SCRIM_OPACITY = 0.32
+_PANEL_W = 328
+_DIAL = 256
+_NUM_R = 100  # radius of the number ring
+_KNOB_R = 20
+
+
+def angle_to_hour(dx: float, dy: float) -> int:
+    """Map a screen vector from the dial center to a clock hour (1..12).
+
+    North is 12 (``dy`` negative is up); angle increases clockwise.
+    """
+    deg = math.degrees(math.atan2(dx, -dy)) % 360
+    h = round(deg / 30) % 12
+    return 12 if h == 0 else h
+
+
+def angle_to_minute(dx: float, dy: float) -> int:
+    """Map a screen vector from the dial center to a minute (0..59)."""
+    deg = math.degrees(math.atan2(dx, -dy)) % 360
+    return round(deg / 6) % 60
+
+
+def _pos(value: int, step_deg: float, cx: float, cy: float, r: float):
+    ang = math.radians(value * step_deg)
+    return cx + r * math.sin(ang), cy - r * math.cos(ang)
+
+
+class _ClockDial(QWidget):
+    """A clock-face dial; click or drag to set the active value."""
+
+    valueChanged = Signal(int)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._mode = "hour"  # or "minute"
+        self._hour = 12
+        self._minute = 0
+        self.setFixedSize(_DIAL, _DIAL)
+        ThemeManager.instance().themeChanged.connect(self.update)
+
+    def set_mode(self, mode: str) -> None:
+        self._mode = mode
+        self.update()
+
+    def set_values(self, hour: int, minute: int) -> None:
+        self._hour, self._minute = hour, minute
+        self.update()
+
+    def _center(self):
+        return self.width() / 2.0, self.height() / 2.0
+
+    def _apply(self, pos) -> None:
+        cx, cy = self._center()
+        dx, dy = pos.x() - cx, pos.y() - cy
+        if self._mode == "hour":
+            self._hour = angle_to_hour(dx, dy)
+            self.valueChanged.emit(self._hour)
+        else:
+            self._minute = angle_to_minute(dx, dy)
+            self.valueChanged.emit(self._minute)
+        self.update()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self._apply(event.position())
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        self._apply(event.position())
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+        theme = ThemeManager.instance()
+        cx, cy = self._center()
+
+        # Face.
+        painter.setBrush(theme.color(ColorRole.SURFACE_CONTAINER_HIGHEST))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QRectF(0, 0, self.width(), self.height()))
+
+        if self._mode == "hour":
+            value, step, labels = self._hour, 30.0, [(h, h % 12) for h in range(1, 13)]
+        else:
+            value, step = self._minute, 6.0
+            labels = [(m, m // 5) for m in range(0, 60, 5)]
+
+        # Selector hand + knob.
+        primary = theme.color(ColorRole.PRIMARY)
+        kx, ky = _pos(value, step, cx, cy, _NUM_R)
+        pen = painter.pen()
+        pen.setColor(primary)
+        pen.setWidthF(2.0)
+        painter.setPen(pen)
+        painter.drawLine(int(cx), int(cy), int(kx), int(ky))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(primary)
+        painter.drawEllipse(QRectF(cx - 4, cy - 4, 8, 8))
+        painter.drawEllipse(QRectF(kx - _KNOB_R, ky - _KNOB_R, 2 * _KNOB_R, 2 * _KNOB_R))
+
+        # Numbers.
+        painter.setFont(font_for_role(TypescaleRole.BODY_LARGE))
+        for val, ring_index in labels:
+            x, y = _pos(ring_index, 30.0, cx, cy, _NUM_R)
+            on_knob = val == value
+            painter.setPen(
+                theme.color(ColorRole.ON_PRIMARY if on_knob else ColorRole.ON_SURFACE)
+            )
+            painter.drawText(QRectF(x - 20, y - 20, 40, 40),
+                             Qt.AlignmentFlag.AlignCenter, f"{val:02d}"
+                             if self._mode == "minute" else str(val))
+
+
+class _TimePanel(MaterialWidgetMixin, QWidget):
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._init_material(
+            shape=ShapeScale.EXTRA_LARGE,
+            elevation=ElevationLevel.LEVEL3,
+            ripple=False,
+            focus_ring=False,
+            surface_role=ColorRole.SURFACE_CONTAINER_HIGH,
+        )
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        self.paint_material_surface(painter)
+
+
+class _FieldLabel(QLabel):
+    """A clickable hour/minute field in the time display."""
+
+    clicked = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFont(font_for_role(TypescaleRole.DISPLAY_MEDIUM))
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFixedSize(96, 80)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self.clicked.emit()
+
+
+class MdTimePicker(QWidget):
+    """A modal time picker overlay (12-hour dial + AM/PM)."""
+
+    accepted = Signal(QTime)
+    rejected = Signal()
+    closed = Signal()
+
+    def __init__(self, parent: QWidget, *, initial_time: QTime | None = None) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        t = initial_time or QTime.currentTime()
+        self._is_pm = t.hour() >= 12
+        self._hour = t.hour() % 12 or 12
+        self._minute = t.minute()
+        self._mode = "hour"
+
+        self._panel = _TimePanel(self)
+        self._panel.setFixedWidth(_PANEL_W)
+        pl = QVBoxLayout(self._panel)
+        pl.setContentsMargins(24, 18, 24, 12)
+        pl.setSpacing(16)
+
+        self._support = QLabel("Select time")
+        self._support.setFont(font_for_role(TypescaleRole.LABEL_MEDIUM))
+        pl.addWidget(self._support)
+
+        # Time display: HH : MM  + AM/PM toggle.
+        disp = QHBoxLayout()
+        disp.setSpacing(4)
+        self._hour_field = _FieldLabel()
+        self._minute_field = _FieldLabel()
+        self._hour_field.clicked.connect(lambda: self._set_mode("hour"))
+        self._minute_field.clicked.connect(lambda: self._set_mode("minute"))
+        colon = QLabel(":")
+        colon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        colon.setFont(font_for_role(TypescaleRole.DISPLAY_MEDIUM))
+        disp.addWidget(self._hour_field)
+        disp.addWidget(colon)
+        disp.addWidget(self._minute_field)
+        disp.addSpacing(8)
+        disp.addLayout(self._build_ampm())
+        disp.addStretch(1)
+        pl.addLayout(disp)
+
+        # Dial.
+        self._dial = _ClockDial()
+        self._dial.valueChanged.connect(self._on_dial)
+        dial_row = QHBoxLayout()
+        dial_row.addStretch(1)
+        dial_row.addWidget(self._dial)
+        dial_row.addStretch(1)
+        pl.addLayout(dial_row)
+
+        # Actions.
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel = MdTextButton("Cancel")
+        ok = MdTextButton("OK")
+        cancel.clicked.connect(self._on_cancel)
+        ok.clicked.connect(self._on_ok)
+        actions.addWidget(cancel)
+        actions.addWidget(ok)
+        pl.addLayout(actions)
+
+        self._fade = 0.0
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(duration_ms(Duration.MEDIUM2))
+        self._anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
+        self._anim.valueChanged.connect(self._set_fade)
+
+        parent.installEventFilter(self)
+        ThemeManager.instance().themeChanged.connect(self._restyle)
+        self._restyle()
+        self._refresh()
+        self.hide()
+
+    def _build_ampm(self) -> QVBoxLayout:
+        box = QVBoxLayout()
+        box.setSpacing(0)
+        self._am = QLabel("AM")
+        self._pm = QLabel("PM")
+        for lbl in (self._am, self._pm):
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl.setFont(font_for_role(TypescaleRole.TITLE_MEDIUM))
+            lbl.setFixedSize(48, 40)
+            lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._am.mousePressEvent = lambda e: self._set_pm(False)  # type: ignore[method-assign]
+        self._pm.mousePressEvent = lambda e: self._set_pm(True)  # type: ignore[method-assign]
+        box.addWidget(self._am)
+        box.addWidget(self._pm)
+        return box
+
+    # -- state -------------------------------------------------------------
+
+    @property
+    def selected_time(self) -> QTime:
+        h24 = self._hour % 12 + (12 if self._is_pm else 0)
+        return QTime(h24, self._minute)
+
+    def _set_mode(self, mode: str) -> None:
+        self._mode = mode
+        self._dial.set_mode(mode)
+        self._refresh()
+
+    def _set_pm(self, pm: bool) -> None:
+        self._is_pm = pm
+        self._refresh()
+
+    def _on_dial(self, value: int) -> None:
+        if self._mode == "hour":
+            self._hour = value
+        else:
+            self._minute = value
+        self._refresh()
+
+    def _refresh(self) -> None:
+        theme = ThemeManager.instance()
+        self._hour_field.setText(f"{self._hour:02d}")
+        self._minute_field.setText(f"{self._minute:02d}")
+        self._dial.set_values(self._hour, self._minute)
+        self._dial.set_mode(self._mode)
+
+        def field_style(active: bool) -> str:
+            bg = ColorRole.PRIMARY_CONTAINER if active else ColorRole.SURFACE_CONTAINER_HIGHEST
+            fg = ColorRole.ON_PRIMARY_CONTAINER if active else ColorRole.ON_SURFACE
+            return (f"background-color: {theme.color(bg).name()};"
+                    f"color: {theme.color(fg).name()}; border-radius: 8px;")
+
+        self._hour_field.setStyleSheet(field_style(self._mode == "hour"))
+        self._minute_field.setStyleSheet(field_style(self._mode == "minute"))
+
+        def ampm_style(active: bool) -> str:
+            bg = ColorRole.TERTIARY_CONTAINER if active else ColorRole.SURFACE_CONTAINER_HIGH
+            fg = ColorRole.ON_TERTIARY_CONTAINER if active else ColorRole.ON_SURFACE_VARIANT
+            return (f"background-color: {theme.color(bg).name()};"
+                    f"color: {theme.color(fg).name()};")
+
+        self._am.setStyleSheet(ampm_style(not self._is_pm))
+        self._pm.setStyleSheet(ampm_style(self._is_pm))
+
+    def _restyle(self) -> None:
+        c = ThemeManager.instance().color(ColorRole.ON_SURFACE_VARIANT).name()
+        self._support.setStyleSheet(f"color: {c};")
+
+    # -- open / close ------------------------------------------------------
+
+    def open(self) -> None:
+        self.setGeometry(self.parentWidget().rect())
+        self._center_panel()
+        self.raise_()
+        self.show()
+        self.setFocus()
+        if MOTION_ENABLED:
+            self._anim.stop()
+            self._anim.setStartValue(0.0)
+            self._anim.setEndValue(1.0)
+            self._anim.start()
+        else:
+            self._set_fade(1.0)
+
+    def _on_ok(self) -> None:
+        self.accepted.emit(self.selected_time)
+        self._close()
+
+    def _on_cancel(self) -> None:
+        self.rejected.emit()
+        self._close()
+
+    def _close(self) -> None:
+        self.hide()
+        self.closed.emit()
+
+    def _set_fade(self, value) -> None:
+        self._fade = float(value)
+        self._center_panel()
+        self.update()
+
+    # -- geometry / scrim --------------------------------------------------
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if obj is self.parentWidget() and event.type() == QEvent.Type.Resize:
+            if self.isVisible():
+                self.setGeometry(self.parentWidget().rect())
+                self._center_panel()
+        return False
+
+    def _center_panel(self) -> None:
+        self._panel.adjustSize()
+        w = self._panel.width()
+        h = self._panel.sizeHint().height()
+        slide = int((1.0 - self._fade) * 12)
+        self._panel.setGeometry(
+            int((self.width() - w) / 2),
+            int((self.height() - h) / 2) + slide, int(w), int(h),
+        )
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._center_panel()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if not self._panel.geometry().contains(event.position().toPoint()):
+            self.rejected.emit()
+            self._close()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        if event.key() == Qt.Key.Key_Escape:
+            self.rejected.emit()
+            self._close()
+            return
+        super().keyPressEvent(event)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        scrim = QColor(ThemeManager.instance().color(ColorRole.SCRIM))
+        scrim.setAlphaF(_SCRIM_OPACITY * self._fade)
+        painter.fillRect(self.rect(), scrim)
+
+
+__all__ = ["MdTimePicker", "angle_to_hour", "angle_to_minute"]

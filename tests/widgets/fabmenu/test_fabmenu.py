@@ -32,7 +32,7 @@ def test_item_click_emits_index_and_closes(qtbot):
     m.set_open(True)
     got = []
     m.itemClicked.connect(got.append)
-    second._fab.click()
+    second.click()  # add_item returns the item's small FAB
     assert got == [1] and not m.is_open
 
 

@@ -34,6 +34,15 @@ from ..tokens.color import ColorRole
 from ..tokens.typography import TypescaleRole, spec_for
 from ..core.typography_util import font_for_role
 from ..widgets.badge import MdBadge
+from ..widgets.banner import MdBanner
+from ..widgets.bottomsheet import MdBottomSheet
+from ..widgets.buttongroup import MdButtonGroup
+from ..widgets.carousel import MdCarousel
+from ..widgets.expansionpanel import MdExpansionPanel
+from ..widgets.fabmenu import MdFabMenu
+from ..widgets.loadingindicator import MdLoadingIndicator
+from ..widgets.toolbar import MdToolbar
+from ..widgets.searchbar import MdSearchBar
 from ..widgets.button import (
     MdElevatedButton,
     MdFilledButton,
@@ -43,6 +52,8 @@ from ..widgets.button import (
 )
 from ..widgets.card import CardVariant, MdCard
 from ..widgets.checkbox import MdCheckbox
+from ..widgets.datatable import MdDataTable
+from ..widgets.datepicker import MdDatePicker
 from ..widgets.dialog import MdDialog
 from ..widgets.chips import (
     MdAssistChip,
@@ -66,16 +77,22 @@ from ..widgets.list import MdList, MdListItem
 from ..widgets.menu import MdMenu, MdMenuItem
 from ..widgets.navigationbar import MdNavigationBar
 from ..widgets.navigationdrawer import MdNavigationDrawer
+from ..widgets.navigationrail import MdNavigationRail
 from ..widgets.navigationtab import MdNavigationTab
 from ..widgets.progress import MdCircularProgress, MdLinearProgress
 from ..widgets.radio import MdRadio
+from ..widgets.rangeslider import MdRangeSlider
 from ..widgets.segmentedbutton import MdSegmentedButton, MdSegmentedButtonSet
 from ..widgets.select import MdFilledSelect, MdOutlinedSelect
 from ..widgets.splitbutton import MdSplitButton, SplitButtonColor
 from ..widgets.slider import MdSlider
+from ..widgets.snackbar import MdSnackbar
 from ..widgets.switch import MdSwitch
 from ..widgets.tabs import MdTabs
 from ..widgets.textfield import MdFilledTextField, MdOutlinedTextField
+from ..widgets.timepicker import MdTimePicker
+from ..widgets.tooltip import MdTooltip
+from ..widgets.topappbar import MdTopAppBar, TopAppBarVariant
 
 
 def _themed_text_label(
@@ -370,6 +387,17 @@ def _build_select() -> QWidget:
     return page
 
 
+def _build_range_slider() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Range slider"))
+    lay.addWidget(MdRangeSlider(low=25, high=75))
+    lay.addWidget(_section("Discrete (step 10)"))
+    lay.addWidget(MdRangeSlider(low=20, high=60, step=10))
+    lay.addStretch(1)
+    return page
+
+
 def _build_slider() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -533,6 +561,41 @@ def _build_list() -> QWidget:
     return page
 
 
+def _build_data_table() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Data table (click a header to sort)"))
+    table = MdDataTable(selectable=True)
+    table.set_columns(["Dessert", "Calories", "Fat (g)"],
+                      numeric=[False, True, True])
+    for row in [["Frozen yogurt", 159, 6], ["Ice cream sandwich", 237, 9],
+                ["Eclair", 262, 16], ["Cupcake", 305, 4]]:
+        table.add_row(row)
+    lay.addWidget(table)
+    lay.addStretch(1)
+    return page
+
+
+def _build_date_picker() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Date picker (click to open)"))
+    open_btn = MdFilledButton("Pick a date")
+    status = QLabel("(no date selected)")
+
+    def open_picker():
+        dp = MdDatePicker(page.window())
+        dp.closed.connect(dp.deleteLater)
+        dp.accepted.connect(lambda d: status.setText(d.toString("dddd, MMMM d, yyyy")))
+        dp.open()
+
+    open_btn.clicked.connect(open_picker)
+    lay.addWidget(_row(open_btn))
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
 def _build_dialog() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -603,6 +666,25 @@ def _build_navigation_drawer() -> QWidget:
                         ("Sent", "send"), ("Drafts", "drafts")]:
         drawer.add_destination(label, icon=icon)
     lay.addWidget(drawer)
+    lay.addStretch(1)
+    return page
+
+
+def _build_navigation_rail() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Navigation rail"))
+    row = QHBoxLayout()
+    rail = MdNavigationRail()
+    for label, icon in [("Home", "home"), ("Search", "search"),
+                        ("Saved", "bookmark"), ("Profile", "person")]:
+        rail.add_destination(label, icon=icon)
+    rail.setFixedHeight(rail.sizeHint().height())
+    row.addWidget(rail)
+    row.addStretch(1)
+    holder = QWidget()
+    holder.setLayout(row)
+    lay.addWidget(holder)
     lay.addStretch(1)
     return page
 
@@ -692,6 +774,242 @@ def _build_icon() -> QWidget:
     return page
 
 
+def _build_time_picker() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Time picker (click to open)"))
+    open_btn = MdFilledButton("Pick a time")
+    status = QLabel("(no time selected)")
+
+    def open_picker():
+        tp = MdTimePicker(page.window())
+        tp.closed.connect(tp.deleteLater)
+        tp.accepted.connect(lambda t: status.setText(t.toString("h:mm AP")))
+        tp.open()
+
+    open_btn.clicked.connect(open_picker)
+    lay.addWidget(_row(open_btn))
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
+def _build_tooltip() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Tooltip (hover the buttons)"))
+    row = QHBoxLayout()
+    for label, tip in [("Favorite", "Add to favorites"),
+                       ("Share", "Share this item"),
+                       ("Delete", "Move to trash")]:
+        btn = MdOutlinedButton(label)
+        MdTooltip.attach(btn, tip)
+        row.addWidget(btn)
+    row.addStretch(1)
+    holder = QWidget()
+    holder.setLayout(row)
+    lay.addWidget(holder)
+    lay.addStretch(1)
+    return page
+
+
+def _build_top_app_bar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    for variant, name in [
+        (TopAppBarVariant.CENTER, "Center-aligned"),
+        (TopAppBarVariant.SMALL, "Small"),
+        (TopAppBarVariant.MEDIUM, "Medium"),
+        (TopAppBarVariant.LARGE, "Large"),
+    ]:
+        lay.addWidget(_section(name))
+        nav = MdIconButton("menu")
+        bar = MdTopAppBar("Title", variant=variant, leading=nav)
+        bar.add_action("search")
+        bar.add_action("more_vert")
+        lay.addWidget(bar)
+
+    # Interactive scroll-under collapse: a medium bar pinned above its own
+    # scroll area. Scrolling the list collapses the bar 112 -> 64px.
+    lay.addWidget(_section("Scroll to collapse (medium)"))
+    demo = QWidget()
+    demo.setFixedHeight(280)
+    dv = QVBoxLayout(demo)
+    dv.setContentsMargins(0, 0, 0, 0)
+    dv.setSpacing(0)
+    cbar = MdTopAppBar("Settings", variant=TopAppBarVariant.MEDIUM,
+                       leading=MdIconButton("menu"))
+    cbar.add_action("search")
+    cbar.add_action("more_vert")
+    content = QWidget()
+    cl = QVBoxLayout(content)
+    cl.setContentsMargins(16, 12, 16, 12)
+    cl.setSpacing(10)
+    for i in range(20):
+        cl.addWidget(QLabel(f"List item {i + 1}"))
+    cl.addStretch(1)
+    sa = QScrollArea()
+    sa.setWidgetResizable(True)
+    sa.setWidget(content)
+    sa.setFrameShape(QScrollArea.Shape.NoFrame)
+    cbar.attach_scroll_area(sa)
+    dv.addWidget(cbar)
+    dv.addWidget(sa, 1)
+    lay.addWidget(demo)
+    lay.addStretch(1)
+    return page
+
+
+def _build_snackbar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Snackbar (click to show)"))
+    show_btn = MdFilledButton("Show snackbar")
+
+    def show_snackbar():
+        host = page.window()
+        sb = MdSnackbar(host, "Photo deleted from album", action_label="Undo")
+        sb.dismissed.connect(sb.deleteLater)  # transient: don't accumulate
+        sb.open()
+
+    show_btn.clicked.connect(show_snackbar)
+    lay.addWidget(_row(show_btn))
+    lay.addStretch(1)
+    return page
+
+
+def _build_banner() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Banner"))
+    banner = MdBanner("Your photos are being backed up to the cloud.",
+                      icon="cloud_upload")
+    banner.add_action("Turn off")
+    banner.add_action("Open")
+    lay.addWidget(banner)
+    lay.addStretch(1)
+    return page
+
+
+def _build_bottom_sheet() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Bottom sheet (click to open)"))
+    open_btn = MdFilledButton("Show bottom sheet")
+
+    def open_sheet():
+        sheet = MdBottomSheet(page.window())
+        sheet.closed.connect(sheet.deleteLater)
+        title = QLabel("Share")
+        title.setFont(font_for_role(TypescaleRole.TITLE_LARGE))
+        sheet.add_content(title)
+        for label in ["Messages", "Email", "Copy link", "Nearby"]:
+            sheet.add_content(MdItem(label, leading=MdIcon("share")))
+        sheet.open()
+
+    open_btn.clicked.connect(open_sheet)
+    lay.addWidget(_row(open_btn))
+    lay.addStretch(1)
+    return page
+
+
+def _build_carousel() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Carousel (scroll horizontally)"))
+    carousel = MdCarousel()
+    for name in ["Beach", "Mountain", "Forest", "City", "Desert", "Lake"]:
+        carousel.add_tile(name)
+    lay.addWidget(carousel)
+    lay.addStretch(1)
+    return page
+
+
+def _build_expansion_panel() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Expansion panels"))
+    for i, (title, body) in enumerate([
+        ("Trip details", "Flight, hotel, and rental car reservations."),
+        ("Travelers", "2 adults, 1 child."),
+        ("Payment", "Visa ending in 4242."),
+    ]):
+        panel = MdExpansionPanel(title, expanded=(i == 0))
+        text = QLabel(body)
+        text.setWordWrap(True)
+        text.setFont(font_for_role(TypescaleRole.BODY_MEDIUM))
+        panel.add_content(text)
+        lay.addWidget(panel)
+        lay.addWidget(MdDivider())
+    lay.addStretch(1)
+    return page
+
+
+def _build_search_bar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Search bar"))
+    bar = MdSearchBar(placeholder="Search your library", trailing_icon="mic")
+    status = QLabel("(type and press Enter)")
+    bar.submitted.connect(lambda q: status.setText(f"Searched: {q}"))
+    lay.addWidget(bar)
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
+def _build_button_group() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Button group (multi-select)"))
+    multi = MdButtonGroup(multi=True)
+    for label, icon in [("Bold", "format_bold"), ("Italic", "format_italic"),
+                        ("Underline", "format_underlined")]:
+        multi.add_button(label, icon=icon)
+    lay.addWidget(multi)
+    lay.addWidget(_section("Single-select"))
+    single = MdButtonGroup(multi=False)
+    for label in ["Day", "Week", "Month"]:
+        single.add_button(label)
+    single._buttons[0].setChecked(True)
+    lay.addWidget(single)
+    lay.addStretch(1)
+    return page
+
+
+def _build_fab_menu() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("FAB menu (click the FAB)"))
+    menu = MdFabMenu(icon="add")
+    for label, icon in [("Share", "share"), ("Edit", "edit"), ("Delete", "delete")]:
+        menu.add_item(label, icon=icon)
+    lay.addWidget(menu, 0, Qt.AlignmentFlag.AlignRight)
+    lay.addStretch(1)
+    return page
+
+
+def _build_loading_indicator() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Loading indicator"))
+    lay.addWidget(_row(MdLoadingIndicator(), MdLoadingIndicator(size=64)))
+    lay.addStretch(1)
+    return page
+
+
+def _build_toolbar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Floating toolbar"))
+    floating = MdToolbar()
+    for icon in ["format_bold", "format_italic", "format_underlined", "more_vert"]:
+        floating.add_action(icon)
+    lay.addWidget(floating, 0, Qt.AlignmentFlag.AlignLeft)
+    lay.addStretch(1)
+    return page
+
+
 def _page() -> QWidget:
     page = QWidget()
     lay = QVBoxLayout(page)
@@ -702,31 +1020,48 @@ def _page() -> QWidget:
 
 _COMPONENTS = [
     ("Badge", _build_badge),
+    ("Banner", _build_banner),
+    ("Bottom sheet", _build_bottom_sheet),
     ("Button", _build_button),
+    ("Button group", _build_button_group),
     ("Card", _build_card),
+    ("Carousel", _build_carousel),
     ("Checkbox", _build_checkbox),
     ("Chips", _build_chips),
+    ("Data table", _build_data_table),
+    ("Date picker", _build_date_picker),
     ("Dialog", _build_dialog),
     ("Divider", _build_divider),
+    ("Expansion panel", _build_expansion_panel),
     ("FAB", _build_fab),
+    ("FAB menu", _build_fab_menu),
     ("Field", _build_field),
     ("Icon", _build_icon),
     ("Icon button", _build_icon_button),
     ("Item", _build_item),
     ("List", _build_list),
+    ("Loading indicator", _build_loading_indicator),
     ("Menu", _build_menu),
     ("Navigation bar", _build_navigation_bar),
     ("Navigation drawer", _build_navigation_drawer),
+    ("Navigation rail", _build_navigation_rail),
     ("Navigation tab", _build_navigation_tab),
     ("Progress", _build_progress),
     ("Radio", _build_radio),
+    ("Range slider", _build_range_slider),
+    ("Search bar", _build_search_bar),
     ("Segmented", _build_segmented),
     ("Select", _build_select),
     ("Slider", _build_slider),
+    ("Snackbar", _build_snackbar),
     ("Split button", _build_split_button),
     ("Switch", _build_switch),
     ("Tabs", _build_tabs),
     ("Text field", _build_text_field),
+    ("Time picker", _build_time_picker),
+    ("Toolbar", _build_toolbar),
+    ("Tooltip", _build_tooltip),
+    ("Top app bar", _build_top_app_bar),
     ("Typography", _build_typography),
 ]
 
@@ -736,31 +1071,48 @@ _COMPONENTS = [
 # material-web.dev catalog.
 COMPONENT_META: dict[str, tuple[str, str]] = {
     "Badge": ("notifications", "Small status indicator overlaid on an anchor."),
+    "Banner": ("campaign", "Prominent inline message with actions."),
+    "Bottom sheet": ("vertical_align_bottom", "Sheet anchored to the bottom edge."),
     "Button": ("smart_button", "Five common button variants for actions."),
+    "Button group": ("page_control", "Connected pills, single- or multi-select."),
     "Card": ("space_dashboard", "Container for related content and actions."),
+    "Carousel": ("view_carousel", "Scrollable row of contained items."),
     "Checkbox": ("check_box", "Select one or more items from a set."),
     "Chips": ("label", "Compact elements for input, filters, and actions."),
+    "Data table": ("table_rows", "Rows and columns of sortable data."),
+    "Date picker": ("calendar_month", "Select a date from a calendar."),
     "Dialog": ("web_asset", "Modal surface for focused tasks and decisions."),
     "Divider": ("horizontal_rule", "Thin line that groups content."),
+    "Expansion panel": ("expand_more", "Header that expands to reveal content."),
     "FAB": ("add_circle", "Floating action button for the primary action."),
+    "FAB menu": ("menu_open", "A FAB that expands into labeled actions."),
     "Field": ("text_fields", "Chrome shared by text fields and selects."),
     "Icon": ("star", "Material Symbols icon rendering."),
     "Icon button": ("touch_app", "Icon-only buttons, optionally toggleable."),
     "Item": ("list_alt", "Content layout primitive with slots."),
     "List": ("list", "Vertical index of text and images."),
+    "Loading indicator": ("progress_activity", "Morphing shape for short waits."),
     "Menu": ("menu", "Popup list of choices anchored to a control."),
     "Navigation bar": ("bottom_navigation", "Bottom bar switching destinations."),
     "Navigation drawer": ("menu_open", "Side panel of navigation destinations."),
+    "Navigation rail": ("view_sidebar", "Vertical side rail switching destinations."),
     "Navigation tab": ("tab", "A single navigation destination."),
     "Progress": ("progress_activity", "Linear and circular progress."),
     "Radio": ("radio_button_checked", "Select one option from a set."),
+    "Range slider": ("tune", "Select a range between two values."),
+    "Search bar": ("search", "Field for searching app content."),
     "Segmented": ("splitscreen", "Connected toggle buttons for choices."),
     "Select": ("arrow_drop_down_circle", "Dropdown to pick from options."),
     "Slider": ("tune", "Select a value from a range."),
+    "Snackbar": ("info", "Brief message with an optional action."),
     "Split button": ("more_horiz", "Primary action plus a dropdown."),
     "Switch": ("toggle_on", "Toggle the state of a single item."),
     "Tabs": ("tab", "Organize content across primary/secondary tabs."),
     "Text field": ("text_fields", "Let users enter and edit text."),
+    "Time picker": ("schedule", "Select a time on a clock dial."),
+    "Toolbar": ("toolbar", "Floating or docked row of actions."),
+    "Tooltip": ("chat_bubble", "Brief label shown on hover or focus."),
+    "Top app bar": ("view_day", "Title and actions at the top of a screen."),
     "Typography": ("format_size", "The Material 3 type scale."),
 }
 

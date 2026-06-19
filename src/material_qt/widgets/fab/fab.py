@@ -112,6 +112,12 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
+    # -- content -----------------------------------------------------------
+
+    def set_icon(self, name: str) -> None:
+        self._icon_name = name
+        self.update()
+
     # -- elevation by interaction -----------------------------------------
 
     def _rest_elevation(self) -> ElevationLevel:

@@ -59,7 +59,9 @@ class MdFabMenu(QWidget):
         self._rows: list[_MenuItemRow] = []
 
         self._lay = QVBoxLayout(self)
-        self._lay.setContentsMargins(0, 0, 0, 0)
+        # The FABs carry a level-3 drop shadow (~16px blur, 4px down-offset);
+        # inset the content so those shadows are not clipped at the widget edge.
+        self._lay.setContentsMargins(18, 18, 18, 22)
         self._lay.setSpacing(12)
         self._lay.setAlignment(Qt.AlignmentFlag.AlignRight)
 

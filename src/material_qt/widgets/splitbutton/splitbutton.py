@@ -20,7 +20,7 @@ from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QSizePolicy, QWidget
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.shape_util import rounded_path
 from ...tokens.color import ColorRole
-from ...tokens.elevation import ElevationLevel
+from ...tokens.elevation import ElevationLevel, ambient_shadow, key_shadow
 from ...tokens.shape import CornerRadii
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
@@ -37,6 +37,18 @@ _TRAILING_W = 40
 _OUTLINE_WIDTH = 1.0
 _DISABLED_CONTAINER_OPACITY = 0.12
 _DISABLED_LABEL_OPACITY = 0.38
+
+
+def _shadow_margin(level: ElevationLevel) -> int:
+    """Padding needed around an elevated child so its drop shadow isn't clipped.
+
+    The shadow reaches roughly its blur radius (the effect uses 2x the token
+    blur) plus the vertical offset beyond the widget rect.
+    """
+    if int(level) <= 0:
+        return 2
+    k, a = key_shadow(level), ambient_shadow(level)
+    return int(round(max(k.blur, a.blur) * 2.0 + max(k.dy, a.dy)))
 
 
 class SplitButtonColor(Enum):
@@ -246,13 +258,18 @@ class MdSplitButton(QWidget):
         self._leading.clicked.connect(self.clicked)
         self._trailing.clicked.connect(self._on_trailing)
 
+        # Inset the elevated segments so their drop shadow (largest at the
+        # hover elevation) is not clipped by this widget's bounds.
+        m = _shadow_margin(
+            max(self._spec.elevation, self._spec.hover_elevation, key=lambda e: int(e))
+        )
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(m, m, m, m)
         lay.setSpacing(1)  # 1px gap shows the surface behind as a divider
         lay.addWidget(self._leading)
         lay.addWidget(self._trailing)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.setFixedHeight(_HEIGHT)
+        self.setFixedHeight(_HEIGHT + 2 * m)
 
     # -- menu --------------------------------------------------------------
 

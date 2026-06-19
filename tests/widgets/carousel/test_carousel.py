@@ -107,6 +107,21 @@ def test_weighted_no_scroll_when_items_fit(qtbot):
     assert c._max_p() == 0.0  # 2 items <= 3 slots -> nothing to scroll
 
 
+def test_weighted_animate_again_after_finish_no_error(qtbot):
+    # animate() deletes its QPropertyAnimation when it stops; scrolling again
+    # after one finished must not call .stop() on the dead C++ object.
+    c = MdWeightedCarousel(weights=[3, 2, 1])
+    qtbot.addWidget(c)
+    for n in ["a", "b", "c", "d", "e", "f"]:
+        c.add_tile(n)
+    c.resize(600, 196)
+    c.show()
+    c._animate_to(1)
+    qtbot.waitUntil(lambda: c._anim is None, timeout=2000)  # let it finish + clear
+    c._animate_to(2)  # would raise RuntimeError on the stale animation before the fix
+    assert c._anim is not None
+
+
 def test_weighted_renders(qtbot):
     c = MdWeightedCarousel(weights=[3, 2, 1])
     qtbot.addWidget(c)

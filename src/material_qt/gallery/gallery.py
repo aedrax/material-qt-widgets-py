@@ -394,6 +394,8 @@ def _build_range_slider() -> QWidget:
     lay.addWidget(MdRangeSlider(low=25, high=75))
     lay.addWidget(_section("Discrete (step 10)"))
     lay.addWidget(MdRangeSlider(low=20, high=60, step=10))
+    lay.addWidget(_section("Labeled (value bubble while dragging)"))
+    lay.addWidget(MdRangeSlider(low=30, high=70, labeled=True))
     lay.addStretch(1)
     return page
 
@@ -405,6 +407,8 @@ def _build_slider() -> QWidget:
     lay.addWidget(MdSlider(value=40))
     lay.addWidget(_section("Discrete (step 10, ticks)"))
     lay.addWidget(MdSlider(value=60, step=10, ticks=True))
+    lay.addWidget(_section("Labeled (value bubble while dragging)"))
+    lay.addWidget(MdSlider(value=30, labeled=True))
     lay.addStretch(1)
     return page
 

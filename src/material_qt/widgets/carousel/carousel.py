@@ -385,15 +385,24 @@ class MdWeightedCarousel(QWidget):
         return self._content_width() * self._weights[0] / sum(self._weights)
 
     def _stop_anim(self) -> None:
+        # animate() uses DeleteWhenStopped, so a finished animation's C++ object
+        # is already gone even though we still hold the wrapper — guard the stop.
         if self._anim is not None:
-            self._anim.stop()
+            try:
+                self._anim.stop()
+            except RuntimeError:
+                pass
             self._anim = None
 
     def _animate_to(self, index: float) -> None:
         target = max(0.0, min(float(index), self._max_p()))
         self._stop_anim()
         self._anim = animate(self, b"p", target, duration=Duration.SHORT4,
-                             easing=Easing.EMPHASIZED, start=self._p)
+                             easing=Easing.EMPHASIZED, start=self._p,
+                             on_finished=self._clear_anim)
+
+    def _clear_anim(self) -> None:
+        self._anim = None
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:

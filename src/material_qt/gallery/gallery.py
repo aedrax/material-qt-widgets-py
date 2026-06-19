@@ -921,11 +921,17 @@ def _build_bottom_sheet() -> QWidget:
 def _build_carousel() -> QWidget:
     page = _page()
     lay = page.layout()
-    lay.addWidget(_section("Carousel (scroll horizontally)"))
+    lay.addWidget(_section("Carousel (drag, swipe, or scroll to browse)"))
+    names = ["Beach", "Mountain", "Forest", "City", "Desert", "Lake"]
     carousel = MdCarousel()
-    for name in ["Beach", "Mountain", "Forest", "City", "Desert", "Lake"]:
+    for name in names:
         carousel.add_tile(name)
+    status = QLabel(f"Showing: {names[0]}")
+    carousel.indexChanged.connect(
+        lambda i: status.setText(f"Showing: {names[i]}" if 0 <= i < len(names) else "")
+    )
     lay.addWidget(carousel)
+    lay.addWidget(status)
     lay.addStretch(1)
     return page
 

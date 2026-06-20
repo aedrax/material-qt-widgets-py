@@ -6,13 +6,18 @@ display (selectable hour / minute fields + an AM/PM toggle) and a clock dial.
 Clicking or dragging on the dial sets the active field. ``accepted(QTime)`` fires
 on OK, ``rejected`` on Cancel/dismiss.
 
+It supports both Material time-picker entry modes (cf. Flutter's
+``TimePickerEntryMode``): a **dial** and a **text input** (type the hour/minute),
+switched with the keyboard/clock icon button. ``initial_entry_mode`` picks the
+starting mode.
+
 The clock dial uses a north-up, clockwise layout: 12 o'clock at the top, 3 to the
 right. The screen-vector -> value math (``atan2(dx, -dy)``) is exposed as pure
 functions :func:`angle_to_hour` / :func:`angle_to_minute` so the cardinal mapping
 is unit-tested (top=12, right=3, bottom=6, left=9).
 
-Deferred (scaffold): the 24-hour dual-ring dial (inner ring) and the text-input
-variant — this is the 12-hour + AM/PM dial only.
+Deferred (scaffold): the 24-hour dual-ring dial (inner ring) — this is the
+12-hour + AM/PM picker only.
 """
 
 from __future__ import annotations
@@ -20,8 +25,15 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTime, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QIntValidator, QPainter
+from PySide6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
@@ -33,6 +45,7 @@ from ...tokens.shape import ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..button import MdTextButton
+from ..iconbutton import MdIconButton
 
 _SCRIM_OPACITY = 0.32
 _PANEL_W = 328
@@ -186,14 +199,21 @@ class MdTimePicker(QWidget):
     rejected = Signal()
     closed = Signal()
 
-    def __init__(self, parent: QWidget, *, initial_time: QTime | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget,
+        *,
+        initial_time: QTime | None = None,
+        initial_entry_mode: str = "dial",
+    ) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         t = initial_time or QTime.currentTime()
         self._is_pm = t.hour() >= 12
         self._hour = t.hour() % 12 or 12
         self._minute = t.minute()
-        self._mode = "hour"
+        self._mode = "hour"  # which field the dial edits
+        self._entry = "input" if initial_entry_mode == "input" else "dial"
 
         self._panel = _TimePanel(self)
         self._panel.setFixedWidth(_PANEL_W)
@@ -201,39 +221,37 @@ class MdTimePicker(QWidget):
         pl.setContentsMargins(24, 18, 24, 12)
         pl.setSpacing(16)
 
-        self._support = QLabel("Select time")
+        self._support = QLabel()
         self._support.setFont(font_for_role(TypescaleRole.LABEL_MEDIUM))
         pl.addWidget(self._support)
 
-        # Time display: HH : MM  + AM/PM toggle.
+        # Time display: a stacked HH:MM (dial labels vs editable fields) + AM/PM.
         disp = QHBoxLayout()
-        disp.setSpacing(4)
-        self._hour_field = _FieldLabel()
-        self._minute_field = _FieldLabel()
-        self._hour_field.clicked.connect(lambda: self._set_mode("hour"))
-        self._minute_field.clicked.connect(lambda: self._set_mode("minute"))
-        colon = QLabel(":")
-        colon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        colon.setFont(font_for_role(TypescaleRole.DISPLAY_MEDIUM))
-        disp.addWidget(self._hour_field)
-        disp.addWidget(colon)
-        disp.addWidget(self._minute_field)
-        disp.addSpacing(8)
+        disp.setSpacing(8)
+        self._display = QStackedWidget()
+        self._display.addWidget(self._build_dial_display())   # index 0: dial
+        self._display.addWidget(self._build_input_display())  # index 1: input
+        disp.addWidget(self._display)
         disp.addLayout(self._build_ampm())
         disp.addStretch(1)
         pl.addLayout(disp)
 
-        # Dial.
+        # Dial (hidden in input mode).
         self._dial = _ClockDial()
         self._dial.valueChanged.connect(self._on_dial)
         dial_row = QHBoxLayout()
         dial_row.addStretch(1)
         dial_row.addWidget(self._dial)
         dial_row.addStretch(1)
-        pl.addLayout(dial_row)
+        self._dial_row = QWidget()
+        self._dial_row.setLayout(dial_row)
+        pl.addWidget(self._dial_row)
 
-        # Actions.
+        # Actions: entry-mode toggle (left) + Cancel / OK (right).
         actions = QHBoxLayout()
+        self._toggle = MdIconButton("keyboard")
+        self._toggle.clicked.connect(self._toggle_entry)
+        actions.addWidget(self._toggle)
         actions.addStretch(1)
         cancel = MdTextButton("Cancel")
         ok = MdTextButton("OK")
@@ -253,7 +271,69 @@ class MdTimePicker(QWidget):
         ThemeManager.instance().themeChanged.connect(self._restyle)
         self._restyle()
         self._refresh()
+        self._apply_entry_mode()
         self.hide()
+
+    # -- display builders --------------------------------------------------
+
+    def _build_dial_display(self) -> QWidget:
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+        self._hour_field = _FieldLabel()
+        self._minute_field = _FieldLabel()
+        self._hour_field.clicked.connect(lambda: self._set_mode("hour"))
+        self._minute_field.clicked.connect(lambda: self._set_mode("minute"))
+        colon = QLabel(":")
+        colon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        colon.setFont(font_for_role(TypescaleRole.DISPLAY_MEDIUM))
+        row.addWidget(self._hour_field)
+        row.addWidget(colon)
+        row.addWidget(self._minute_field)
+        return w
+
+    def _make_edit(self, validator: QIntValidator) -> QLineEdit:
+        e = QLineEdit()
+        e.setValidator(validator)
+        e.setMaxLength(2)
+        e.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        e.setFont(font_for_role(TypescaleRole.DISPLAY_MEDIUM))
+        e.setFixedSize(96, 80)
+        return e
+
+    def _build_input_display(self) -> QWidget:
+        w = QWidget()
+        outer = QVBoxLayout(w)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(4)
+        self._hour_edit = self._make_edit(QIntValidator(1, 12))
+        self._minute_edit = self._make_edit(QIntValidator(0, 59))
+        self._hour_edit.textEdited.connect(self._on_edit_hour)
+        self._minute_edit.textEdited.connect(self._on_edit_minute)
+        colon = QLabel(":")
+        colon.setFixedWidth(12)
+        colon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        colon.setFont(font_for_role(TypescaleRole.DISPLAY_MEDIUM))
+        fields = QHBoxLayout()
+        fields.setSpacing(4)
+        fields.addWidget(self._hour_edit)
+        fields.addWidget(colon)
+        fields.addWidget(self._minute_edit)
+        labels = QHBoxLayout()
+        labels.setSpacing(4)
+        self._hour_caption = QLabel("Hour")
+        self._minute_caption = QLabel("Minute")
+        for cap in (self._hour_caption, self._minute_caption):
+            cap.setFixedWidth(96)
+            cap.setFont(font_for_role(TypescaleRole.BODY_SMALL))
+        labels.addWidget(self._hour_caption)
+        labels.addSpacing(12)
+        labels.addWidget(self._minute_caption)
+        labels.addStretch(1)
+        outer.addLayout(fields)
+        outer.addLayout(labels)
+        return w
 
     def _build_ampm(self) -> QVBoxLayout:
         box = QVBoxLayout()
@@ -294,10 +374,42 @@ class MdTimePicker(QWidget):
             self._minute = value
         self._refresh()
 
+    def _on_edit_hour(self, text: str) -> None:
+        if text:
+            self._hour = max(1, min(12, int(text)))
+            self._refresh()
+
+    def _on_edit_minute(self, text: str) -> None:
+        if text:
+            self._minute = max(0, min(59, int(text)))
+            self._refresh()
+
+    def _toggle_entry(self) -> None:
+        self._entry = "input" if self._entry == "dial" else "dial"
+        self._apply_entry_mode()
+
+    def _apply_entry_mode(self) -> None:
+        is_input = self._entry == "input"
+        self._display.setCurrentIndex(1 if is_input else 0)
+        self._dial_row.setVisible(not is_input)
+        # Icon shows the mode you can switch TO: keyboard (->input) / clock.
+        self._toggle.set_icon("schedule" if is_input else "keyboard")
+        self._support.setText("Enter time" if is_input else "Select time")
+        if is_input:
+            self._hour_edit.setText(f"{self._hour:02d}")
+            self._minute_edit.setText(f"{self._minute:02d}")
+        self._refresh()
+        self._center_panel()
+
     def _refresh(self) -> None:
         theme = ThemeManager.instance()
         self._hour_field.setText(f"{self._hour:02d}")
         self._minute_field.setText(f"{self._minute:02d}")
+        # Keep input fields in sync, but don't clobber the one being typed in.
+        if not self._hour_edit.hasFocus():
+            self._hour_edit.setText(f"{self._hour:02d}")
+        if not self._minute_edit.hasFocus():
+            self._minute_edit.setText(f"{self._minute:02d}")
         self._dial.set_values(self._hour, self._minute)
         self._dial.set_mode(self._mode)
 
@@ -320,8 +432,20 @@ class MdTimePicker(QWidget):
         self._pm.setStyleSheet(ampm_style(self._is_pm))
 
     def _restyle(self) -> None:
-        c = ThemeManager.instance().color(ColorRole.ON_SURFACE_VARIANT).name()
-        self._support.setStyleSheet(f"color: {c};")
+        theme = ThemeManager.instance()
+        variant = theme.color(ColorRole.ON_SURFACE_VARIANT).name()
+        self._support.setStyleSheet(f"color: {variant};")
+        self._hour_caption.setStyleSheet(f"color: {variant};")
+        self._minute_caption.setStyleSheet(f"color: {variant};")
+        edit_css = (
+            f"QLineEdit {{ color: {theme.color(ColorRole.ON_SURFACE).name()};"
+            f" background: {theme.color(ColorRole.SURFACE_CONTAINER_HIGHEST).name()};"
+            f" border: 1px solid {theme.color(ColorRole.OUTLINE).name()};"
+            " border-radius: 8px; }"
+            f" QLineEdit:focus {{ border: 2px solid {theme.color(ColorRole.PRIMARY).name()}; }}"
+        )
+        self._hour_edit.setStyleSheet(edit_css)
+        self._minute_edit.setStyleSheet(edit_css)
 
     # -- open / close ------------------------------------------------------
 

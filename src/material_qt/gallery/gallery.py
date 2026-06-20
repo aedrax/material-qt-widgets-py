@@ -1492,6 +1492,12 @@ class GalleryWindow(QWidget):
             if drawer is not None:
                 self._modal.host(drawer)
             self._nav_scroll.setMaximumWidth(_DRAWER_W)  # reset for next expand
+            # Hiding the focused drawer item makes Qt move focus to the hamburger
+            # with TabFocusReason, which spuriously shows its keyboard focus ring
+            # (this collapse is mouse/layout-driven, not keyboard nav). Drop that
+            # focus so no ring lingers until the next click.
+            if self._hamburger.hasFocus():
+                self._hamburger.clearFocus()
 
     def _toggle_nav(self) -> None:
         if self._modal.is_open():

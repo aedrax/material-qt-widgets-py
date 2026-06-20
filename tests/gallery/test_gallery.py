@@ -69,3 +69,21 @@ def test_palette_button_cycles_theme_preset(qtbot):
     assert ThemeManager.instance().color(ColorRole.PRIMARY).name() == "#6750a4"
     w._cycle_brand()  # -> back to Catalog
     assert ThemeManager.instance().color(ColorRole.PRIMARY).name() == "#7f5700"
+
+
+def test_collapse_clears_spurious_hamburger_focus_ring(qtbot):
+    # Hiding the focused drawer item on collapse makes Qt move focus to the
+    # hamburger with TabFocusReason, which would spuriously show its keyboard
+    # focus ring until the next click. The collapse must clear that.
+    from PySide6.QtCore import Qt
+
+    w = GalleryWindow()
+    qtbot.addWidget(w)
+    w.resize(1200, 800)
+    w.show()
+    item = w._drawer._items[2]
+    item.setFocus(Qt.FocusReason.MouseFocusReason)
+    w.select(2)
+    w.resize(700, 800)  # cross the breakpoint -> collapse
+    assert not w._hamburger.hasFocus()
+    assert not w._hamburger.focus_ring.visible

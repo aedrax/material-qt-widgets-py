@@ -3,9 +3,13 @@
 Ports Material Web's ``labs/navigationdrawer`` — a side panel
 (``surface-container-low``) listing destinations as full-corner pill rows. The
 active destination fills ``secondary-container`` with ``on-secondary-container``
-content; inactive rows are transparent with ``on-surface-variant``. An optional
-headline (``title-small``) sits above the destinations. Exclusive selection;
-``changed(index)`` fires on change.
+content; inactive rows are transparent with ``on-surface-variant``. Exclusive
+selection; ``changed(index)`` fires on change.
+
+Like Flutter's ``NavigationDrawer``, destinations can be interspersed with other
+content — section headers (:meth:`add_section`), dividers (:meth:`add_divider`),
+or arbitrary widgets (:meth:`add_widget`). ``changed`` reports the index among
+*destinations only*, ignoring the non-destination children.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from ...tokens.color import ColorRole
 from ...tokens.shape import ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
+from ..divider import MdDivider
 from ..icon.icon import material_symbols_font
 
 _ITEM_H = 56
@@ -38,10 +43,11 @@ _DRAWER_W = 360  # M3 navigation-drawer container-width
 
 class _DrawerItem(MaterialWidgetMixin, QAbstractButton):
     def __init__(self, label: str, parent: QWidget | None = None, *,
-                 icon: str = "") -> None:
+                 icon: str = "", active_icon: str = "") -> None:
         super().__init__(parent)
         self.setText(label)
         self._icon = icon
+        self._active_icon = active_icon or icon
         self.setCheckable(True)
         self._init_material(
             shape=ShapeScale.FULL,
@@ -83,13 +89,14 @@ class _DrawerItem(MaterialWidgetMixin, QAbstractButton):
         )
         color = theme.color(content_role)
         x = _PAD
-        if self._icon:
+        glyph = self._active_icon if active else self._icon
+        if glyph:
             font = material_symbols_font(_ICON, filled=active)
             if font is not None:
                 painter.setFont(font)
                 painter.setPen(color)
                 painter.drawText(QRectF(x, 0, _ICON, self.height()),
-                                 Qt.AlignmentFlag.AlignCenter, self._icon)
+                                 Qt.AlignmentFlag.AlignCenter, glyph)
             x += _ICON + _GAP
         painter.setFont(self.font())
         painter.setPen(color)
@@ -131,10 +138,15 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
         c = ThemeManager.instance().color(ColorRole.ON_SURFACE_VARIANT).name()
         self._headline.setStyleSheet(f"color: {c}; padding: 8px 16px;")
 
-    def add_destination(self, label: str, *, icon: str = "") -> _DrawerItem:
-        item = _DrawerItem(label, icon=icon)
+    def _insert(self, widget: QWidget) -> None:
+        # Always before the trailing stretch (the last layout item).
+        self._lay.insertWidget(self._lay.count() - 1, widget)
+
+    def add_destination(self, label: str, *, icon: str = "",
+                        active_icon: str = "") -> _DrawerItem:
+        item = _DrawerItem(label, icon=icon, active_icon=active_icon)
         self._group.addButton(item, len(self._items))
-        self._lay.insertWidget(self._lay.count() - 1, item)
+        self._insert(item)
         self._items.append(item)
         item.toggled.connect(
             lambda on, it=item: on and self.changed.emit(self._items.index(it))
@@ -142,6 +154,30 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
         if len(self._items) == 1:
             item.setChecked(True)
         return item
+
+    def add_section(self, text: str) -> QLabel:
+        """Add a non-destination section header between destinations."""
+        label = QLabel(text)
+        label.setFont(font_for_role(TypescaleRole.TITLE_SMALL))
+
+        def style() -> None:
+            c = ThemeManager.instance().color(ColorRole.ON_SURFACE_VARIANT).name()
+            label.setStyleSheet(f"color: {c}; padding: 16px 16px 8px 16px;")
+
+        style()
+        ThemeManager.instance().themeChanged.connect(style)
+        self._insert(label)
+        return label
+
+    def add_divider(self) -> MdDivider:
+        """Add a divider between destinations."""
+        divider = MdDivider()
+        self._insert(divider)
+        return divider
+
+    def add_widget(self, widget: QWidget) -> None:
+        """Add an arbitrary widget (does not count as a destination)."""
+        self._insert(widget)
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)

@@ -35,7 +35,7 @@ from ..tokens.typography import TypescaleRole, spec_for
 from ..core.typography_util import font_for_role
 from ..widgets.badge import MdBadge
 from ..widgets.banner import MdBanner
-from ..widgets.bottomsheet import MdBottomSheet
+from ..widgets.bottomsheet import MdBottomSheet, MdStandardBottomSheet
 from ..widgets.buttongroup import MdButtonGroup
 from ..widgets.carousel import MdCarousel, MdWeightedCarousel
 from ..widgets.expansionpanel import MdExpansionPanel
@@ -43,7 +43,7 @@ from ..widgets.fabmenu import MdFabMenu
 from ..widgets.loadingindicator import MdLoadingIndicator
 from ..widgets.toolbar import MdToolbar
 from ..widgets.searchbar import MdSearchBar
-from ..widgets.sidesheet import MdSideSheet
+from ..widgets.sidesheet import MdSideSheet, MdStandardSideSheet
 from ..widgets.button import (
     MdElevatedButton,
     MdFilledButton,
@@ -937,6 +937,24 @@ def _build_bottom_sheet() -> QWidget:
 
     open_btn.clicked.connect(open_sheet)
     lay.addWidget(_row(open_btn))
+
+    lay.addWidget(_section("Standard (persistent) — docks inline"))
+    std = MdStandardBottomSheet(expanded=True)
+    for text in ["Nearby cafe", "Nearby park", "Nearby museum"]:
+        std.add_content(MdItem(text, leading=MdIcon("place")))
+    holder = QWidget()
+    holder.setFixedHeight(240)
+    vb = QVBoxLayout(holder)
+    vb.setContentsMargins(0, 0, 0, 0)
+    vb.setSpacing(0)
+    body = QLabel("Map / content")
+    body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    vb.addWidget(body, 1)
+    vb.addWidget(std)
+    toggle = MdOutlinedButton("Toggle bottom sheet")
+    toggle.clicked.connect(lambda: std.set_expanded(not std.expanded))
+    lay.addWidget(_row(toggle))
+    lay.addWidget(holder)
     lay.addStretch(1)
     return page
 
@@ -958,6 +976,25 @@ def _build_side_sheet() -> QWidget:
 
     open_btn.clicked.connect(open_sheet)
     lay.addWidget(_row(open_btn))
+
+    lay.addWidget(_section("Standard (persistent) — docks inline"))
+    std = MdStandardSideSheet(title="Filters", expanded=True)
+    for text in ["Category", "Price range", "Rating"]:
+        std.add_content(MdItem(text, leading=MdIcon("tune")))
+    std.add_action("Apply")
+    holder = QWidget()
+    holder.setFixedHeight(260)
+    hb = QHBoxLayout(holder)
+    hb.setContentsMargins(0, 0, 0, 0)
+    hb.setSpacing(0)
+    body = QLabel("Main content")
+    body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    hb.addWidget(body, 1)
+    hb.addWidget(std)
+    toggle = MdOutlinedButton("Toggle side sheet")
+    toggle.clicked.connect(lambda: std.set_expanded(not std.expanded))
+    lay.addWidget(_row(toggle))
+    lay.addWidget(holder)
     lay.addStretch(1)
     return page
 

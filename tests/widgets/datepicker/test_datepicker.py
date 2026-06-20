@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QDate
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QDate, Qt
+from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
 from material_qt.widgets.datepicker import MdDatePicker, first_column
+from material_qt.widgets.iconbutton import MdIconButton
 
 
 def test_first_column_sunday_first():
@@ -65,6 +66,33 @@ def test_cancel_emits_rejected_and_closed(qtbot):
     dp.open()
     dp._on_cancel()
     assert rej == [True] and clo == [True] and dp.isHidden()
+
+
+def test_close_does_not_leave_focus_ring_on_sibling(qtbot):
+    # Closing the modal (hide) while a button inside it holds focus must not make
+    # Qt reassign TabFocusReason focus to a sibling focusable widget — that would
+    # spuriously show the sibling's keyboard focus ring (cf. the OK button / the
+    # app bar theme toggle in the gallery).
+    host = QWidget()
+    host.resize(600, 600)
+    layout = QVBoxLayout(host)
+    sibling = MdIconButton("dark_mode")  # focus_ring=True
+    layout.addWidget(sibling)
+    qtbot.addWidget(host)
+    host.show()
+    # Focus only transfers between widgets while the top-level window is active;
+    # offscreen windows aren't auto-activated, so force it for the repro.
+    QApplication.setActiveWindow(host)
+
+    dp = MdDatePicker(host, initial_date=QDate(2026, 6, 15))
+    dp.open()
+    # Mimic the user clicking OK: the button takes mouse focus, then OK closes.
+    dp._ok.setFocus(Qt.FocusReason.MouseFocusReason)
+    dp._on_ok()
+
+    assert dp.isHidden()
+    assert not sibling.hasFocus()
+    assert not sibling.focus_ring.visible
 
 
 def test_renders(qtbot):

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ...core.focus_util import drop_focus_within
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
 from ...core.typography_util import font_for_role
@@ -172,6 +173,9 @@ class MdDialog(QWidget):
         self.update()
 
     def close_dialog(self) -> None:
+        # Drop focus before hiding so Qt doesn't reassign it to a sibling with
+        # TabFocusReason, which would show a spurious keyboard focus ring.
+        drop_focus_within(self)
         self.hide()
         self.closed.emit()
 

@@ -678,17 +678,24 @@ def _build_navigation_drawer() -> QWidget:
 def _build_navigation_rail() -> QWidget:
     page = _page()
     lay = page.layout()
-    lay.addWidget(_section("Navigation rail"))
-    row = QHBoxLayout()
+    lay.addWidget(_section("Navigation rail (toggle to extend)"))
+    dests = [("Home", "home"), ("Search", "search"),
+             ("Saved", "bookmark"), ("Profile", "person")]
     rail = MdNavigationRail()
-    for label, icon in [("Home", "home"), ("Search", "search"),
-                        ("Saved", "bookmark"), ("Profile", "person")]:
+    for label, icon in dests:
         rail.add_destination(label, icon=icon)
-    rail.setFixedHeight(rail.sizeHint().height())
+    rail.set_leading(MdFab("edit", size=FabSize.SMALL, color=FabColor.PRIMARY))
+    rail.setFixedHeight(360)
+
+    toggle = MdFilledTonalButton("Toggle extended")
+    toggle.clicked.connect(lambda: rail.set_extended(not rail.extended))
+
+    row = QHBoxLayout()
     row.addWidget(rail)
     row.addStretch(1)
     holder = QWidget()
     holder.setLayout(row)
+    lay.addWidget(_row(toggle))
     lay.addWidget(holder)
     lay.addStretch(1)
     return page

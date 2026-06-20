@@ -8,8 +8,10 @@ from PySide6.QtWidgets import QWidget
 from material_qt.widgets.timepicker import (
     MdTimePicker,
     angle_to_hour,
+    angle_to_hour24,
     angle_to_minute,
 )
+from material_qt.widgets.timepicker.timepicker import _hour24_layout
 
 _R = 100  # distance from center; magnitude is irrelevant to the angle
 
@@ -138,5 +140,70 @@ def test_renders_input_mode(qtbot):
     host.resize(600, 600)
     qtbot.addWidget(host)
     tp = MdTimePicker(host, initial_time=QTime(10, 10), initial_entry_mode="input")
+    tp.open()
+    tp.grab()
+
+
+# -- 24-hour dual-ring dial -----------------------------------------------
+
+def test_angle_to_hour24_inner_ring_cardinals():
+    _r = 100
+    assert angle_to_hour24(0, -_r, inner=True) == 12  # top
+    assert angle_to_hour24(_r, 0, inner=True) == 3    # right
+    assert angle_to_hour24(0, _r, inner=True) == 6    # bottom
+    assert angle_to_hour24(-_r, 0, inner=True) == 9   # left
+
+
+def test_angle_to_hour24_outer_ring_cardinals():
+    _r = 100
+    assert angle_to_hour24(0, -_r, inner=False) == 0   # top -> 00
+    assert angle_to_hour24(_r, 0, inner=False) == 15   # right -> 15 (3 + 12)
+    assert angle_to_hour24(0, _r, inner=False) == 18   # bottom -> 18
+    assert angle_to_hour24(-_r, 0, inner=False) == 21  # left -> 21
+
+
+def test_hour24_layout_round_trips_ring_assignment():
+    assert _hour24_layout(0) == (0, False)    # 00 outer, top
+    assert _hour24_layout(12) == (0, True)    # 12 inner, top
+    assert _hour24_layout(3) == (3, True)     # 3 inner
+    assert _hour24_layout(15) == (3, False)   # 15 outer
+    assert _hour24_layout(23) == (11, False)  # 23 outer, last position
+
+
+def test_24h_has_no_ampm_and_reports_24h_time(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_time=QTime(20, 30), hour24=True)
+    assert tp._am.isHidden() and tp._pm.isHidden()
+    assert tp._hour == 20  # dial value is the 24h hour directly
+    assert tp.selected_time == QTime(20, 30)
+
+
+def test_24h_dial_sets_hour_directly(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_time=QTime(9, 0), hour24=True)
+    tp._on_dial(18)  # the dial emits a 24h hour
+    assert tp.selected_time == QTime(18, 0)
+
+
+def test_24h_input_accepts_0_to_23(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, hour24=True, initial_entry_mode="input")
+    tp._on_edit_hour("23")
+    assert tp._hour == 23
+    tp._on_edit_hour("40")  # clamps
+    assert tp._hour == 23
+
+
+def test_renders_24h(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_time=QTime(20, 30), hour24=True)
     tp.open()
     tp.grab()

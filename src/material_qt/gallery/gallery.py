@@ -782,18 +782,21 @@ def _build_icon() -> QWidget:
 def _build_time_picker() -> QWidget:
     page = _page()
     lay = page.layout()
-    lay.addWidget(_section("Time picker (click to open)"))
-    open_btn = MdFilledButton("Pick a time")
+    lay.addWidget(_section("Time picker (dial + keyboard input)"))
     status = QLabel("(no time selected)")
 
-    def open_picker():
-        tp = MdTimePicker(page.window())
+    def open_picker(*, hour24: bool):
+        tp = MdTimePicker(page.window(), hour24=hour24)
         tp.closed.connect(tp.deleteLater)
-        tp.accepted.connect(lambda t: status.setText(t.toString("h:mm AP")))
+        fmt = "HH:mm" if hour24 else "h:mm AP"
+        tp.accepted.connect(lambda t: status.setText(t.toString(fmt)))
         tp.open()
 
-    open_btn.clicked.connect(open_picker)
-    lay.addWidget(_row(open_btn))
+    twelve = MdFilledButton("Pick a time (12h)")
+    twentyfour = MdFilledButton("Pick a time (24h)")
+    twelve.clicked.connect(lambda: open_picker(hour24=False))
+    twentyfour.clicked.connect(lambda: open_picker(hour24=True))
+    lay.addWidget(_row(twelve, twentyfour))
     lay.addWidget(status)
     lay.addStretch(1)
     return page

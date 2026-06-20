@@ -24,9 +24,11 @@ class MdNavigationBar(MaterialWidgetMixin, QWidget):
 
     changed = Signal(int)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *,
+                 label_behavior: str = "always") -> None:
         super().__init__(parent)
         self._tabs: list[MdNavigationTab] = []
+        self._label_behavior = label_behavior
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._lay = QHBoxLayout(self)
@@ -41,8 +43,11 @@ class MdNavigationBar(MaterialWidgetMixin, QWidget):
         self.setFixedHeight(_HEIGHT)
 
     def add_destination(self, label: str, *, icon: str = "",
-                        active_icon: str = "") -> MdNavigationTab:
+                        active_icon: str = "", badge: str | None = None) -> MdNavigationTab:
         tab = MdNavigationTab(label, icon=icon, active_icon=active_icon)
+        tab.set_label_behavior(self._label_behavior)
+        if badge is not None:
+            tab.set_badge(badge)
         self._group.addButton(tab, len(self._tabs))
         self._lay.addWidget(tab)
         self._tabs.append(tab)
@@ -50,6 +55,12 @@ class MdNavigationBar(MaterialWidgetMixin, QWidget):
         if len(self._tabs) == 1:
             tab.setChecked(True)
         return tab
+
+    def set_label_behavior(self, behavior: str) -> None:
+        """``"always"`` / ``"selected"`` / ``"hide"`` — when to show labels."""
+        self._label_behavior = behavior
+        for tab in self._tabs:
+            tab.set_label_behavior(behavior)
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(max(360, sum(t.sizeHint().width() for t in self._tabs)), _HEIGHT)

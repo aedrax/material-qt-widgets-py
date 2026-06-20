@@ -670,6 +670,10 @@ def _build_navigation_drawer() -> QWidget:
     for label, icon in [("Inbox", "inbox"), ("Starred", "star"),
                         ("Sent", "send"), ("Drafts", "drafts")]:
         drawer.add_destination(label, icon=icon)
+    drawer.add_divider()
+    drawer.add_section("Labels")
+    for label, icon in [("Work", "work"), ("Personal", "person")]:
+        drawer.add_destination(label, icon=icon)
     lay.addWidget(drawer)
     lay.addStretch(1)
     return page

@@ -83,3 +83,60 @@ def test_renders(qtbot):
     tp = MdTimePicker(host, initial_time=QTime(10, 10))
     tp.open()
     tp.grab()
+
+
+# -- input entry mode -----------------------------------------------------
+
+def test_initial_entry_mode_input(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_time=QTime(10, 10), initial_entry_mode="input")
+    assert tp._entry == "input"
+    assert tp._display.currentIndex() == 1  # the input page
+    assert tp._dial_row.isHidden()
+    assert tp._hour_edit.text() == "10" and tp._minute_edit.text() == "10"
+
+
+def test_toggle_switches_entry_mode(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_time=QTime(10, 10))  # dial by default
+    assert tp._entry == "dial" and not tp._dial_row.isHidden()
+    tp._toggle_entry()
+    assert tp._entry == "input" and tp._dial_row.isHidden()
+    tp._toggle_entry()
+    assert tp._entry == "dial" and not tp._dial_row.isHidden()
+
+
+def test_typing_updates_selected_time(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_time=QTime(9, 0), initial_entry_mode="input")
+    tp._hour_edit.setText("7")
+    tp._on_edit_hour("7")
+    tp._minute_edit.setText("45")
+    tp._on_edit_minute("45")
+    assert tp.selected_time == QTime(7, 45)  # still AM
+    tp._set_pm(True)
+    assert tp.selected_time == QTime(19, 45)
+
+
+def test_typed_value_clamps(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_entry_mode="input")
+    tp._on_edit_minute("90")  # out of range -> clamped to 59
+    assert tp._minute == 59
+
+
+def test_renders_input_mode(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, initial_time=QTime(10, 10), initial_entry_mode="input")
+    tp.open()
+    tp.grab()

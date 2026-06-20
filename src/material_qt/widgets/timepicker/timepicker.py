@@ -50,7 +50,8 @@ from ..iconbutton import MdIconButton
 _SCRIM_OPACITY = 0.32
 _PANEL_W = 328
 _DIAL = 256
-_NUM_R = 100  # radius of the number ring
+_OUTER_R = 100  # radius of the (outer) number ring
+_INNER_R = 60  # radius of the inner ring (24-hour dial)
 _KNOB_R = 20
 
 
@@ -70,6 +71,31 @@ def angle_to_minute(dx: float, dy: float) -> int:
     return round(deg / 6) % 60
 
 
+def angle_to_hour24(dx: float, dy: float, *, inner: bool) -> int:
+    """Map a screen vector to a 24-hour clock hour, picking the ring.
+
+    The dial has two rings of 12 positions: the inner ring is ``12, 1..11`` (top
+    is 12) and the outer ring is ``00, 13..23`` (top is 00). ``inner`` selects
+    which ring the point fell on (by its distance from the center).
+    """
+    deg = math.degrees(math.atan2(dx, -dy)) % 360
+    p = round(deg / 30) % 12
+    if inner:
+        return 12 if p == 0 else p
+    return 0 if p == 0 else p + 12
+
+
+def _hour24_layout(h: int) -> tuple[int, bool]:
+    """Position (0..11 from top, clockwise) and ``inner`` ring for 24h hour ``h``."""
+    if h == 0:
+        return 0, False
+    if h == 12:
+        return 0, True
+    if 1 <= h <= 11:
+        return h, True
+    return h - 12, False  # 13..23 on the outer ring
+
+
 def _pos(value: int, step_deg: float, cx: float, cy: float, r: float):
     ang = math.radians(value * step_deg)
     return cx + r * math.sin(ang), cy - r * math.cos(ang)
@@ -85,11 +111,16 @@ class _ClockDial(QWidget):
         self._mode = "hour"  # or "minute"
         self._hour = 12
         self._minute = 0
+        self._hour24 = False
         self.setFixedSize(_DIAL, _DIAL)
         ThemeManager.instance().themeChanged.connect(self.update)
 
     def set_mode(self, mode: str) -> None:
         self._mode = mode
+        self.update()
+
+    def set_24h(self, on: bool) -> None:
+        self._hour24 = on
         self.update()
 
     def set_values(self, hour: int, minute: int) -> None:
@@ -103,7 +134,11 @@ class _ClockDial(QWidget):
         cx, cy = self._center()
         dx, dy = pos.x() - cx, pos.y() - cy
         if self._mode == "hour":
-            self._hour = angle_to_hour(dx, dy)
+            if self._hour24:
+                inner = math.hypot(dx, dy) <= (_INNER_R + _OUTER_R) / 2.0
+                self._hour = angle_to_hour24(dx, dy, inner=inner)
+            else:
+                self._hour = angle_to_hour(dx, dy)
             self.valueChanged.emit(self._hour)
         else:
             self._minute = angle_to_minute(dx, dy)
@@ -116,6 +151,28 @@ class _ClockDial(QWidget):
     def mouseMoveEvent(self, event) -> None:  # noqa: N802
         self._apply(event.position())
 
+    def _paint_hand(self, painter: QPainter, cx: float, cy: float,
+                    kx: float, ky: float) -> None:
+        primary = ThemeManager.instance().color(ColorRole.PRIMARY)
+        pen = painter.pen()
+        pen.setColor(primary)
+        pen.setWidthF(2.0)
+        painter.setPen(pen)
+        painter.drawLine(int(cx), int(cy), int(kx), int(ky))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(primary)
+        painter.drawEllipse(QRectF(cx - 4, cy - 4, 8, 8))
+        painter.drawEllipse(QRectF(kx - _KNOB_R, ky - _KNOB_R, 2 * _KNOB_R, 2 * _KNOB_R))
+
+    def _paint_number(self, painter: QPainter, text: str, x: float, y: float,
+                      *, selected: bool) -> None:
+        theme = ThemeManager.instance()
+        painter.setPen(
+            theme.color(ColorRole.ON_PRIMARY if selected else ColorRole.ON_SURFACE)
+        )
+        painter.drawText(QRectF(x - 20, y - 20, 40, 40),
+                         Qt.AlignmentFlag.AlignCenter, text)
+
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -127,37 +184,34 @@ class _ClockDial(QWidget):
         painter.setBrush(theme.color(ColorRole.SURFACE_CONTAINER_HIGHEST))
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(QRectF(0, 0, self.width(), self.height()))
+        painter.setFont(font_for_role(TypescaleRole.BODY_LARGE))
+
+        if self._mode == "hour" and self._hour24:
+            pos, inner = _hour24_layout(self._hour)
+            kx, ky = _pos(pos, 30.0, cx, cy, _INNER_R if inner else _OUTER_R)
+            self._paint_hand(painter, cx, cy, kx, ky)
+            for p in range(12):  # outer ring: 00, 13..23
+                val = 0 if p == 0 else p + 12
+                x, y = _pos(p, 30.0, cx, cy, _OUTER_R)
+                self._paint_number(painter, f"{val:02d}", x, y, selected=val == self._hour)
+            for p in range(12):  # inner ring: 12, 1..11
+                val = 12 if p == 0 else p
+                x, y = _pos(p, 30.0, cx, cy, _INNER_R)
+                self._paint_number(painter, str(val), x, y, selected=val == self._hour)
+            return
 
         if self._mode == "hour":
-            value, step, labels = self._hour, 30.0, [(h, h % 12) for h in range(1, 13)]
+            value, labels = self._hour, [(h, h % 12) for h in range(1, 13)]
+            fmt = str
         else:
-            value, step = self._minute, 6.0
-            labels = [(m, m // 5) for m in range(0, 60, 5)]
+            value, labels = self._minute, [(m, m // 5) for m in range(0, 60, 5)]
+            fmt = lambda v: f"{v:02d}"  # noqa: E731
 
-        # Selector hand + knob.
-        primary = theme.color(ColorRole.PRIMARY)
-        kx, ky = _pos(value, step, cx, cy, _NUM_R)
-        pen = painter.pen()
-        pen.setColor(primary)
-        pen.setWidthF(2.0)
-        painter.setPen(pen)
-        painter.drawLine(int(cx), int(cy), int(kx), int(ky))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(primary)
-        painter.drawEllipse(QRectF(cx - 4, cy - 4, 8, 8))
-        painter.drawEllipse(QRectF(kx - _KNOB_R, ky - _KNOB_R, 2 * _KNOB_R, 2 * _KNOB_R))
-
-        # Numbers.
-        painter.setFont(font_for_role(TypescaleRole.BODY_LARGE))
+        kx, ky = _pos(value, 30.0 if self._mode == "hour" else 6.0, cx, cy, _OUTER_R)
+        self._paint_hand(painter, cx, cy, kx, ky)
         for val, ring_index in labels:
-            x, y = _pos(ring_index, 30.0, cx, cy, _NUM_R)
-            on_knob = val == value
-            painter.setPen(
-                theme.color(ColorRole.ON_PRIMARY if on_knob else ColorRole.ON_SURFACE)
-            )
-            painter.drawText(QRectF(x - 20, y - 20, 40, 40),
-                             Qt.AlignmentFlag.AlignCenter, f"{val:02d}"
-                             if self._mode == "minute" else str(val))
+            x, y = _pos(ring_index, 30.0, cx, cy, _OUTER_R)
+            self._paint_number(painter, fmt(val), x, y, selected=val == value)
 
 
 class _TimePanel(MaterialWidgetMixin, QWidget):
@@ -205,12 +259,15 @@ class MdTimePicker(QWidget):
         *,
         initial_time: QTime | None = None,
         initial_entry_mode: str = "dial",
+        hour24: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         t = initial_time or QTime.currentTime()
+        self._hour24 = hour24
         self._is_pm = t.hour() >= 12
-        self._hour = t.hour() % 12 or 12
+        # In 24h mode the dial value IS the hour (0-23); in 12h it's 1-12 + AM/PM.
+        self._hour = t.hour() if hour24 else (t.hour() % 12 or 12)
         self._minute = t.minute()
         self._mode = "hour"  # which field the dial edits
         self._entry = "input" if initial_entry_mode == "input" else "dial"
@@ -235,9 +292,13 @@ class MdTimePicker(QWidget):
         disp.addLayout(self._build_ampm())
         disp.addStretch(1)
         pl.addLayout(disp)
+        if hour24:  # 24-hour clock has no AM/PM selector
+            self._am.hide()
+            self._pm.hide()
 
         # Dial (hidden in input mode).
         self._dial = _ClockDial()
+        self._dial.set_24h(hour24)
         self._dial.valueChanged.connect(self._on_dial)
         dial_row = QHBoxLayout()
         dial_row.addStretch(1)
@@ -307,7 +368,8 @@ class MdTimePicker(QWidget):
         outer = QVBoxLayout(w)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(4)
-        self._hour_edit = self._make_edit(QIntValidator(1, 12))
+        hour_validator = QIntValidator(0, 23) if self._hour24 else QIntValidator(1, 12)
+        self._hour_edit = self._make_edit(hour_validator)
         self._minute_edit = self._make_edit(QIntValidator(0, 59))
         self._hour_edit.textEdited.connect(self._on_edit_hour)
         self._minute_edit.textEdited.connect(self._on_edit_minute)
@@ -355,6 +417,8 @@ class MdTimePicker(QWidget):
 
     @property
     def selected_time(self) -> QTime:
+        if self._hour24:
+            return QTime(self._hour, self._minute)
         h24 = self._hour % 12 + (12 if self._is_pm else 0)
         return QTime(h24, self._minute)
 
@@ -376,7 +440,8 @@ class MdTimePicker(QWidget):
 
     def _on_edit_hour(self, text: str) -> None:
         if text:
-            self._hour = max(1, min(12, int(text)))
+            lo, hi = (0, 23) if self._hour24 else (1, 12)
+            self._hour = max(lo, min(hi, int(text)))
             self._refresh()
 
     def _on_edit_minute(self, text: str) -> None:
@@ -522,4 +587,4 @@ class MdTimePicker(QWidget):
         painter.fillRect(self.rect(), scrim)
 
 
-__all__ = ["MdTimePicker", "angle_to_hour", "angle_to_minute"]
+__all__ = ["MdTimePicker", "angle_to_hour", "angle_to_hour24", "angle_to_minute"]

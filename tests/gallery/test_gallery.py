@@ -87,3 +87,22 @@ def test_collapse_clears_spurious_hamburger_focus_ring(qtbot):
     w.resize(700, 800)  # cross the breakpoint -> collapse
     assert not w._hamburger.hasFocus()
     assert not w._hamburger.focus_ring.visible
+
+
+def test_modal_select_clears_spurious_hamburger_focus_ring(qtbot):
+    # In compact mode, selecting a destination in the modal drawer closes it;
+    # hiding the focused item must not leave a focus ring on the hamburger.
+    from PySide6.QtCore import Qt
+
+    w = GalleryWindow()
+    qtbot.addWidget(w)
+    w.resize(700, 800)  # compact -> hamburger + modal
+    w.show()
+    w._toggle_nav()  # open the modal drawer
+    assert w._modal.is_open()
+    item = w._drawer._items[5]
+    item.setFocus(Qt.FocusReason.MouseFocusReason)
+    item.setChecked(True)  # select -> closes the modal
+    assert not w._modal.is_open()
+    assert not w._hamburger.hasFocus()
+    assert not w._hamburger.focus_ring.visible

@@ -1247,6 +1247,19 @@ _DRAWER_W = 360  # matches MdNavigationDrawer width
 _SCRIM_OPACITY = 0.32
 
 
+def _drop_focus_within(container: QWidget) -> None:
+    """Clear focus if it sits inside ``container``, before the container is
+    hidden.
+
+    Hiding a focused widget makes Qt reassign focus to the next widget with
+    ``TabFocusReason`` — which Material treats as keyboard focus and shows a
+    lingering focus ring. Dropping focus first leaves nothing to reassign.
+    """
+    fw = QApplication.focusWidget()
+    if fw is not None and (fw is container or container.isAncestorOf(fw)):
+        fw.clearFocus()
+
+
 class _NavModal(QWidget):
     """An animated modal navigation drawer overlay (compact/medium widths): the
     drawer slides in from the left while the scrim fades in (M3 emphasized
@@ -1313,6 +1326,7 @@ class _NavModal(QWidget):
 
     def _on_anim_finished(self) -> None:
         if not self._opened and self._t <= 0.0:
+            _drop_focus_within(self)  # avoid a spurious focus ring on the hamburger
             self.hide()  # fully closed — remove the overlay
 
     def reset(self) -> None:
@@ -1487,17 +1501,14 @@ class GalleryWindow(QWidget):
         # When the side drawer has finished collapsing, hide it and hand the
         # drawer widget to the modal for compact-width use.
         if self._compact and self._nav_scroll.maximumWidth() == 0:
+            # Drop focus before hiding so Qt doesn't reassign it to the hamburger
+            # with TabFocusReason (which would show a lingering focus ring).
+            _drop_focus_within(self._nav_scroll)
             self._nav_scroll.hide()
             drawer = self._nav_scroll.takeWidget()
             if drawer is not None:
                 self._modal.host(drawer)
             self._nav_scroll.setMaximumWidth(_DRAWER_W)  # reset for next expand
-            # Hiding the focused drawer item makes Qt move focus to the hamburger
-            # with TabFocusReason, which spuriously shows its keyboard focus ring
-            # (this collapse is mouse/layout-driven, not keyboard nav). Drop that
-            # focus so no ring lingers until the next click.
-            if self._hamburger.hasFocus():
-                self._hamburger.clearFocus()
 
     def _toggle_nav(self) -> None:
         if self._modal.is_open():

@@ -32,3 +32,34 @@ def test_renders(qtbot):
         bar.add_destination(label, icon=icon)
     bar.resize(bar.sizeHint())
     bar.grab()
+
+
+def test_label_behavior_propagates(qtbot):
+    bar = MdNavigationBar(label_behavior="selected")
+    qtbot.addWidget(bar)
+    a = bar.add_destination("Home", icon="home")
+    b = bar.add_destination("Search", icon="search")
+    assert a._shows_label() and not b._shows_label()  # a selected by default
+    bar.set_label_behavior("hide")
+    assert not a._shows_label() and not b._shows_label()
+    bar.set_label_behavior("always")
+    assert a._shows_label() and b._shows_label()
+
+
+def test_badge(qtbot):
+    bar = MdNavigationBar()
+    qtbot.addWidget(bar)
+    dot = bar.add_destination("Home", icon="home", badge="")
+    count = bar.add_destination("Mail", icon="mail", badge="8")
+    plain = bar.add_destination("Search", icon="search")
+    assert dot._badge == "" and count._badge == "8" and plain._badge is None
+
+
+def test_renders_no_labels_and_badges(qtbot):
+    bar = MdNavigationBar(label_behavior="hide")
+    qtbot.addWidget(bar)
+    bar.add_destination("Home", icon="home", badge="")
+    bar.add_destination("Mail", icon="mail", badge="99+")
+    bar.add_destination("Search", icon="search")
+    bar.resize(bar.sizeHint())
+    bar.grab()

@@ -5,16 +5,21 @@ a 24px icon inside a pill active indicator with a ``label-medium`` label below.
 When active, the indicator fills ``secondary-container``, the icon uses
 ``on-secondary-container`` (filled), and the label is ``on-surface``; inactive
 uses ``on-surface-variant``. Built on :class:`QAbstractButton` (checkable).
+
+Supports Flutter's ``labelBehavior`` (``"always"`` / ``"selected"`` / ``"hide"``;
+when no label shows the icon centres vertically) and an optional badge on the
+icon (a dot, or a small ``error`` count pill) via :meth:`set_badge`.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import QFontMetrics, QPainter
 from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.shape_util import rounded_path
+from ...core.typography_util import font_for_role
 from ...tokens.color import ColorRole
 from ...tokens.shape import CornerRadii
 from ...tokens.typography import TypescaleRole
@@ -27,6 +32,7 @@ _INDICATOR_H = 32
 _TAB_HEIGHT = 64
 _TOP = 12
 _LABEL_GAP = 4
+_BADGE_H = 16
 
 
 class MdNavigationTab(MaterialWidgetMixin, QAbstractButton):
@@ -44,6 +50,8 @@ class MdNavigationTab(MaterialWidgetMixin, QAbstractButton):
         self.setText(label)
         self._icon = icon
         self._active_icon = active_icon or icon
+        self._label_behavior = "always"  # "always" | "selected" | "hide"
+        self._badge: str | None = None  # None=off, ""=dot, else count text
         self.setCheckable(True)
         # Ripple clipped to the pill indicator shape (corner-full).
         self._init_material(
@@ -56,6 +64,23 @@ class MdNavigationTab(MaterialWidgetMixin, QAbstractButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.toggled.connect(lambda *_: self.update())
+
+    def set_label_behavior(self, behavior: str) -> None:
+        self._label_behavior = behavior
+        self.update()
+
+    def set_badge(self, value: str | None) -> None:
+        """Show a badge on the icon: ``""`` for a dot, a string for a count,
+        ``None`` to hide it."""
+        self._badge = value
+        self.update()
+
+    def _shows_label(self) -> bool:
+        if self._label_behavior == "always":
+            return True
+        if self._label_behavior == "selected":
+            return self.isChecked()
+        return False
 
     def sizeHint(self) -> QSize:  # noqa: N802
         metrics = QFontMetrics(self.font())
@@ -81,7 +106,8 @@ class MdNavigationTab(MaterialWidgetMixin, QAbstractButton):
 
     def _indicator_rect(self) -> QRectF:
         cx = self.width() / 2.0
-        return QRectF(cx - _INDICATOR_W / 2.0, _TOP, _INDICATOR_W, _INDICATOR_H)
+        top = _TOP if self._shows_label() else (_TAB_HEIGHT - _INDICATOR_H) / 2.0
+        return QRectF(cx - _INDICATOR_W / 2.0, top, _INDICATOR_W, _INDICATOR_H)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -106,17 +132,40 @@ class MdNavigationTab(MaterialWidgetMixin, QAbstractButton):
                 painter.setPen(icon_color)
                 painter.drawText(indicator, Qt.AlignmentFlag.AlignCenter, glyph)
 
-        label_color = theme.color(
-            ColorRole.ON_SURFACE if active else ColorRole.ON_SURFACE_VARIANT
-        )
-        painter.setFont(self.font())
-        painter.setPen(label_color)
-        label_rect = QRectF(
-            0, indicator.bottom() + _LABEL_GAP, self.width(),
-            _TAB_HEIGHT - indicator.bottom() - _LABEL_GAP,
-        )
-        painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-                         self.text())
+        if self._badge is not None:
+            self._paint_badge(painter, indicator, theme)
+
+        if self._shows_label():
+            label_color = theme.color(
+                ColorRole.ON_SURFACE if active else ColorRole.ON_SURFACE_VARIANT
+            )
+            painter.setFont(self.font())
+            painter.setPen(label_color)
+            label_rect = QRectF(
+                0, indicator.bottom() + _LABEL_GAP, self.width(),
+                _TAB_HEIGHT - indicator.bottom() - _LABEL_GAP,
+            )
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter
+                             | Qt.AlignmentFlag.AlignTop, self.text())
+
+    def _paint_badge(self, painter: QPainter, indicator: QRectF, theme) -> None:
+        cx = self.width() / 2.0
+        error = theme.color(ColorRole.ERROR)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(error)
+        if self._badge == "":  # small dot at the icon's top-right
+            painter.drawEllipse(QPointF(cx + 8, indicator.top() + 6), 3.0, 3.0)
+            return
+        # Count pill: error container with on-error label.
+        painter.setFont(font_for_role(TypescaleRole.LABEL_SMALL))
+        text = str(self._badge)
+        tw = QFontMetrics(painter.font()).horizontalAdvance(text) + 8
+        bx = cx + 6
+        by = indicator.top() - 2
+        rect = QRectF(bx, by, max(_BADGE_H, tw), _BADGE_H)
+        painter.drawRoundedRect(rect, _BADGE_H / 2.0, _BADGE_H / 2.0)
+        painter.setPen(theme.color(ColorRole.ON_ERROR))
+        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, text)
 
 
 __all__ = ["MdNavigationTab"]

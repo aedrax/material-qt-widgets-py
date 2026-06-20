@@ -652,12 +652,20 @@ def _build_menu() -> QWidget:
 def _build_navigation_bar() -> QWidget:
     page = _page()
     lay = page.layout()
-    lay.addWidget(_section("Navigation bar"))
+    lay.addWidget(_section("Navigation bar (with badges)"))
     bar = MdNavigationBar()
+    bar.add_destination("Home", icon="home")
+    bar.add_destination("Mail", icon="mail", badge="8")
+    bar.add_destination("Alerts", icon="notifications", badge="")
+    bar.add_destination("Profile", icon="person")
+    lay.addWidget(bar)
+
+    lay.addWidget(_section("Label behavior: only selected"))
+    sel = MdNavigationBar(label_behavior="selected")
     for label, icon in [("Home", "home"), ("Search", "search"),
                         ("Saved", "bookmark"), ("Profile", "person")]:
-        bar.add_destination(label, icon=icon)
-    lay.addWidget(bar)
+        sel.add_destination(label, icon=icon)
+    lay.addWidget(sel)
     lay.addStretch(1)
     return page
 

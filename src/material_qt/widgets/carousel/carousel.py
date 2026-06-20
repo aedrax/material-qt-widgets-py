@@ -53,10 +53,12 @@ def weighted_geometry(
     """Geometry for a weighted (multi-browse / hero) carousel at scroll ``p``.
 
     ``weights`` give the relative widths of the visible slots (e.g. ``[3, 2, 1]``
-    => the leading item fills 3/6 of ``width``). ``p`` is the continuous leading
-    index: at integer ``p == m`` item ``m`` fills slot 0, item ``m+1`` slot 1,
-    etc.; fractional ``p`` linearly interpolates between those two tilings. Each
-    item grows toward the leading (largest) slot and shrinks out at the edges.
+    multi-browse, ``[1, 7, 1]`` centre-hero). ``p`` is the continuous index of
+    the item occupying the **max-weight slot** ``q = argmax(weights)``: at integer
+    ``p == m`` item ``m`` fills slot ``q``, item ``m+1`` slot ``q+1``, item ``m-1``
+    slot ``q-1``; fractional ``p`` linearly interpolates between those two
+    tilings. Anchoring on the max slot lets the first and last items expand into
+    it as ``p`` runs the full ``0..n-1`` range (Flutter's ``consumeMaxWeight``).
 
     Returns ``(index, left, width)`` for every item wide enough to show. The
     widths always sum to ``width`` (the construction lerps between two exact
@@ -64,6 +66,7 @@ def weighted_geometry(
     """
     k = len(weights)
     s = sum(weights)
+    q = weights.index(max(weights))  # the max-weight (anchor) slot
     sw = [width * w / s for w in weights]
     sl = [0.0] * k
     for j in range(1, k):
@@ -80,7 +83,7 @@ def weighted_geometry(
     f = p - m
     out: list[tuple[int, float, float]] = []
     for j in range(0, k + 1):
-        i = m + j
+        i = m + j - q
         if i < 0 or i >= n:
             continue
         l0, w0 = slot(j)
@@ -285,8 +288,13 @@ class MdWeightedCarousel(QWidget):
 
     Layout is driven by :func:`weighted_geometry` against a continuous scroll
     value ``p``; children are positioned manually (no QLayout), so this hosts no
-    scroll area. Scroll is clamped so the viewport stays full (the last item ends
-    in the smallest slot rather than scrolling into blank space).
+    scroll area.
+
+    ``consume_max_weight`` (default ``True``, matching Flutter) lets the first and
+    last items expand into the max-weight slot at the ends of the scroll — the
+    leading/trailing small slots empty out as they do. Set it ``False`` to keep
+    the viewport full instead (edge items stay at their slot size, no empty
+    slots).
     """
 
     indexChanged = Signal(int)  # noqa: N815  (Qt-style signal name)
@@ -301,16 +309,18 @@ class MdWeightedCarousel(QWidget):
         parent: QWidget | None = None,
         *,
         weights: list[int] = [3, 2, 1],  # noqa: B006  (read-only default)
+        consume_max_weight: bool = True,
     ) -> None:
         super().__init__(parent)
         self._weights = list(weights)
+        self._consume = consume_max_weight
         self._items: list[QWidget] = []
-        self._p = 0.0
         self._index = 0
         self._anim = None
         self._press_x = 0.0
         self._press_p = 0.0
         self._moved = False
+        self._p = self._min_p()
         self.setFixedHeight(_ITEM_H + 2 * self._PAD_V)
         self.setMouseTracking(True)
 
@@ -319,6 +329,7 @@ class MdWeightedCarousel(QWidget):
     def add_item(self, widget: QWidget) -> None:
         widget.setParent(self)
         self._items.append(widget)
+        self._p = max(self._min_p(), min(self._p, self._max_p()))
         self._relayout()
 
     def add_tile(self, label: str) -> _FlexTile:
@@ -334,8 +345,19 @@ class MdWeightedCarousel(QWidget):
         return self._index
 
     def _max_p(self) -> float:
-        # Keep the viewport full: the last item settles in the smallest slot.
-        return float(max(0, len(self._items) - len(self._weights)))
+        n, k = len(self._items), len(self._weights)
+        if self._consume:
+            # Last item can reach the max slot (trailing slots empty).
+            return float(max(0, n - 1))
+        # Keep the viewport full: last item settles in the trailing slot.
+        q = self._weights.index(max(self._weights))
+        return float(max(0, n - k + q))
+
+    def _min_p(self) -> float:
+        if self._consume:
+            return 0.0
+        # First item sits in slot 0 (no empty leading slots).
+        return float(self._weights.index(max(self._weights)))
 
     # -- p property (drives layout; animatable) ----------------------------
 
@@ -343,7 +365,7 @@ class MdWeightedCarousel(QWidget):
         return self._p
 
     def set_p(self, value) -> None:
-        self._p = max(0.0, min(float(value), self._max_p()))
+        self._p = max(self._min_p(), min(float(value), self._max_p()))
         self._relayout()
         idx = round(self._p)
         if idx != self._index:
@@ -381,8 +403,9 @@ class MdWeightedCarousel(QWidget):
 
     # -- input -------------------------------------------------------------
 
-    def _leading_slot_width(self) -> float:
-        return self._content_width() * self._weights[0] / sum(self._weights)
+    def _step_width(self) -> float:
+        # One item step ~ the dominant (max-weight) slot width.
+        return self._content_width() * max(self._weights) / sum(self._weights)
 
     def _stop_anim(self) -> None:
         # animate() uses DeleteWhenStopped, so a finished animation's C++ object
@@ -395,7 +418,7 @@ class MdWeightedCarousel(QWidget):
             self._anim = None
 
     def _animate_to(self, index: float) -> None:
-        target = max(0.0, min(float(index), self._max_p()))
+        target = max(self._min_p(), min(float(index), self._max_p()))
         self._stop_anim()
         self._anim = animate(self, b"p", target, duration=Duration.SHORT4,
                              easing=Easing.EMPHASIZED, start=self._p,
@@ -416,7 +439,7 @@ class MdWeightedCarousel(QWidget):
             dx = event.position().x() - self._press_x
             if abs(dx) > self._DRAG_THRESHOLD:
                 self._moved = True
-            self.set_p(self._press_p - dx / self._leading_slot_width())
+            self.set_p(self._press_p - dx / self._step_width())
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
         if event.button() != Qt.MouseButton.LeftButton:

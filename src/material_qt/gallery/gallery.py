@@ -939,8 +939,8 @@ def _build_carousel() -> QWidget:
         multi.add_tile(name)
     lay.addWidget(multi)
 
-    lay.addWidget(_section("Hero — weights [6, 1]"))
-    hero = MdWeightedCarousel(weights=[6, 1])
+    lay.addWidget(_section("Hero — weights [1, 7, 1]"))
+    hero = MdWeightedCarousel(weights=[1, 7, 1])
     for name in names:
         hero.add_tile(name)
     lay.addWidget(hero)

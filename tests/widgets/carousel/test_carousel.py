@@ -84,27 +84,52 @@ def test_weighted_geometry_boundary_continuity():
     assert near[0][0] == 1 and abs(near[0][2] - 300.0) < 1.0
 
 
+def test_weighted_consume_max_weight_last_item_reaches_max_slot():
+    # Default consumeMaxWeight=True: the last item can reach the max slot.
+    # weights [3,2,1] => max slot is index 0 (the leading/hero slot).
+    g = weighted_geometry(4.0, 5, [3, 2, 1], 600)  # p = N-1, last item leading
+    assert g[0] == (4, 0.0, 300.0)  # item 4 fills the max (300px) slot
+    assert len(g) == 1  # trailing slots are empty
+
+
 def test_weighted_index_and_clamp(qtbot):
-    c = MdWeightedCarousel(weights=[3, 2, 1])
+    c = MdWeightedCarousel(weights=[3, 2, 1])  # consume_max_weight=True
     qtbot.addWidget(c)
     for n in ["a", "b", "c", "d", "e"]:
         c.add_tile(n)
-    # max_p keeps the viewport full: N - k = 5 - 3 = 2.
-    assert c._max_p() == 2.0
+    assert c._min_p() == 0.0 and c._max_p() == 4.0  # last item can reach the hero
     seen = []
     c.indexChanged.connect(seen.append)
     c.set_p(1.0)
     assert c.current_index == 1 and seen[-1] == 1
-    c.set_p(99)  # clamps
-    assert c.get_p() == 2.0
+    c.set_p(99)  # clamps to the last item
+    assert c.get_p() == 4.0
 
 
-def test_weighted_no_scroll_when_items_fit(qtbot):
+def test_weighted_full_viewport_mode_clamps_short(qtbot):
+    c = MdWeightedCarousel(weights=[3, 2, 1], consume_max_weight=False)
+    qtbot.addWidget(c)
+    for n in ["a", "b", "c", "d", "e"]:
+        c.add_tile(n)
+    # Viewport stays full: q=0 -> p in [0, N-k] = [0, 2].
+    assert c._min_p() == 0.0 and c._max_p() == 2.0
+
+
+def test_weighted_centre_hero_anchor():
+    # [1,7,1]: max slot is the centre (index 1). At p=0 item 0 fills it.
+    g = weighted_geometry(0.0, 5, [1, 7, 1], 900)
+    # slot widths: 100/700/100 at lefts 0/100/800.
+    by_index = {i: (left, w) for i, left, w in g}
+    assert by_index[0] == (100.0, 700.0)  # item 0 in the centre (max) slot
+    assert by_index[1] == (800.0, 100.0)  # item 1 in the trailing small slot
+    assert all(left >= 100.0 for _, left, _w in g)  # leading small slot is empty
+
+
+def test_weighted_no_scroll_when_single_item(qtbot):
     c = MdWeightedCarousel(weights=[3, 2, 1])
     qtbot.addWidget(c)
     c.add_tile("only")
-    c.add_tile("two")
-    assert c._max_p() == 0.0  # 2 items <= 3 slots -> nothing to scroll
+    assert c._max_p() == 0.0 and c._min_p() == 0.0  # one item -> nothing to scroll
 
 
 def test_weighted_animate_again_after_finish_no_error(qtbot):

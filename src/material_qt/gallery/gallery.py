@@ -43,6 +43,7 @@ from ..widgets.fabmenu import MdFabMenu
 from ..widgets.loadingindicator import MdLoadingIndicator
 from ..widgets.toolbar import MdToolbar
 from ..widgets.searchbar import MdSearchBar
+from ..widgets.sidesheet import MdSideSheet
 from ..widgets.button import (
     MdElevatedButton,
     MdFilledButton,
@@ -940,6 +941,27 @@ def _build_bottom_sheet() -> QWidget:
     return page
 
 
+def _build_side_sheet() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Side sheet (click to open)"))
+    open_btn = MdFilledButton("Show side sheet")
+
+    def open_sheet():
+        sheet = MdSideSheet(page.window(), title="Filters")
+        sheet.closed.connect(sheet.deleteLater)
+        for text in ["Category", "Price range", "Rating", "Availability"]:
+            sheet.add_content(MdItem(text, leading=MdIcon("tune")))
+        sheet.add_action("Reset")
+        sheet.add_action("Apply")
+        sheet.open()
+
+    open_btn.clicked.connect(open_sheet)
+    lay.addWidget(_row(open_btn))
+    lay.addStretch(1)
+    return page
+
+
 def _build_carousel() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -1097,6 +1119,7 @@ _COMPONENTS = [
     ("Search bar", _build_search_bar),
     ("Segmented", _build_segmented),
     ("Select", _build_select),
+    ("Side sheet", _build_side_sheet),
     ("Slider", _build_slider),
     ("Snackbar", _build_snackbar),
     ("Split button", _build_split_button),
@@ -1148,6 +1171,7 @@ COMPONENT_META: dict[str, tuple[str, str]] = {
     "Search bar": ("search", "Field for searching app content."),
     "Segmented": ("splitscreen", "Connected toggle buttons for choices."),
     "Select": ("arrow_drop_down_circle", "Dropdown to pick from options."),
+    "Side sheet": ("dock_to_left", "Side panel for supporting content."),
     "Slider": ("tune", "Select a value from a range."),
     "Snackbar": ("info", "Brief message with an optional action."),
     "Split button": ("more_horiz", "Primary action plus a dropdown."),

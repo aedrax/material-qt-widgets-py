@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLabel, QWidget
 
-from material_qt.widgets.bottomsheet import MdBottomSheet
+from material_qt.widgets.bottomsheet import MdBottomSheet, MdStandardBottomSheet
 from material_qt.widgets.bottomsheet import bottomsheet as mod
 
 
@@ -71,3 +71,28 @@ def test_renders(qtbot):
         sheet.grab()
     finally:
         mod.MOTION_ENABLED = prev
+
+
+# -- standard (persistent) bottom sheet -----------------------------------
+
+def test_standard_toggle_height(qtbot):
+    s = MdStandardBottomSheet()
+    qtbot.addWidget(s)
+    big = QLabel("x")
+    big.setFixedHeight(200)
+    s.add_content(big)
+    assert not s.expanded and s.height() == s._PEEK  # starts collapsed (peek)
+    seen = []
+    s.toggled.connect(seen.append)
+    s.set_expanded(True, animated=False)
+    assert s.expanded and s.height() > s._PEEK and seen[-1] is True
+    s.set_expanded(False, animated=False)
+    assert not s.expanded and s.height() == s._PEEK and seen[-1] is False
+
+
+def test_standard_renders(qtbot):
+    s = MdStandardBottomSheet(expanded=True)
+    qtbot.addWidget(s)
+    s.add_content(QLabel("Persistent bottom sheet content."))
+    s.resize(400, s.height())
+    s.grab()

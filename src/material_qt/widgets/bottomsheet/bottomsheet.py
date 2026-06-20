@@ -7,14 +7,16 @@ top. Content is added with :meth:`add_content`. Dismisses on scrim click or
 Escape; ``closed`` fires when it finishes closing.
 
 Composites the snackbar slide (no ``QGraphicsOpacityEffect``) with the dialog
-scrim. Standard / persistent (non-modal) sheets are deferred.
+scrim. :class:`MdStandardBottomSheet` is the persistent (non-modal) variant: it
+docks inline at the bottom of a layout and toggles between a peek and its full
+height.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
@@ -167,4 +169,92 @@ class MdBottomSheet(QWidget):
         painter.fillRect(self.rect(), scrim)
 
 
-__all__ = ["MdBottomSheet"]
+class MdStandardBottomSheet(MaterialWidgetMixin, QWidget):
+    """A standard (persistent, non-modal) bottom sheet for use inline in a layout.
+
+    Unlike :class:`MdBottomSheet` there is no scrim or overlay — it docks at the
+    bottom (place it last in a ``QVBoxLayout``) and toggles between a *peek*
+    height (drag handle only) and its full content height; clicking the handle
+    area toggles it. ``expand()`` / ``collapse()`` / :meth:`set_expanded`;
+    ``toggled(bool)`` fires.
+    """
+
+    toggled = Signal(bool)
+
+    _PEEK = 28  # collapsed height: just the drag handle
+
+    def __init__(self, parent: QWidget | None = None, *, expanded: bool = False) -> None:
+        super().__init__(parent)
+        self._expanded = expanded
+        self._init_material(
+            shape=CornerRadii(_RADIUS, _RADIUS, 0, 0),
+            elevation=ElevationLevel.LEVEL1,
+            ripple=False,
+            focus_ring=False,
+            surface_role=ColorRole.SURFACE_CONTAINER_LOW,
+        )
+        self._content = QVBoxLayout(self)
+        self._content.setContentsMargins(_PAD, 28, _PAD, _PAD)
+        self._content.setSpacing(8)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(duration_ms(Duration.MEDIUM2))
+        self._anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
+        self._anim.valueChanged.connect(lambda v: self.setFixedHeight(int(v)))
+        ThemeManager.instance().themeChanged.connect(self.update)
+        self.setFixedHeight(self._full_height() if expanded else self._PEEK)
+
+    def add_content(self, widget: QWidget) -> None:
+        self._content.addWidget(widget)
+        if self._expanded:
+            self.setFixedHeight(self._full_height())
+
+    def _full_height(self) -> int:
+        return max(self._PEEK, self.sizeHint().height())
+
+    @property
+    def expanded(self) -> bool:
+        return self._expanded
+
+    def expand(self) -> None:
+        self.set_expanded(True)
+
+    def collapse(self) -> None:
+        self.set_expanded(False)
+
+    def set_expanded(self, expanded: bool, *, animated: bool = True) -> None:
+        if expanded == self._expanded:
+            return
+        self._expanded = expanded
+        target = self._full_height() if expanded else self._PEEK
+        if animated and MOTION_ENABLED:
+            self._anim.stop()
+            self._anim.setStartValue(self.height())
+            self._anim.setEndValue(target)
+            self._anim.start()
+        else:
+            self.setFixedHeight(target)
+        self.toggled.emit(expanded)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        # Clicking the drag-handle strip toggles the sheet.
+        if event.position().y() <= 28:
+            self.set_expanded(not self._expanded)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.paint_material_surface(painter)
+        theme = ThemeManager.instance()
+        handle = theme.color(ColorRole.ON_SURFACE_VARIANT)
+        handle.setAlphaF(0.4)
+        painter.setBrush(handle)
+        painter.setPen(Qt.PenStyle.NoPen)
+        cx = self.width() / 2.0
+        painter.drawRoundedRect(
+            QRectF(cx - _HANDLE_W / 2.0, 12, _HANDLE_W, _HANDLE_H),
+            _HANDLE_H / 2.0, _HANDLE_H / 2.0,
+        )
+
+
+__all__ = ["MdBottomSheet", "MdStandardBottomSheet"]

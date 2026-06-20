@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QLabel, QWidget
 
-from material_qt.widgets.sidesheet import MdSideSheet
+from material_qt.widgets.sidesheet import MdSideSheet, MdStandardSideSheet
 from material_qt.widgets.sidesheet import sidesheet as mod
 
 
@@ -94,3 +94,39 @@ def test_renders(qtbot):
         sheet.grab()
     finally:
         mod.MOTION_ENABLED = prev
+
+
+# -- standard (persistent) side sheet -------------------------------------
+
+def test_standard_toggle_width(qtbot):
+    s = MdStandardSideSheet(title="Filters", expanded=True)
+    qtbot.addWidget(s)
+    assert s.expanded and s.width() == 320
+    seen = []
+    s.toggled.connect(seen.append)
+    s.set_expanded(False, animated=False)
+    assert not s.expanded and s.width() == 0 and seen[-1] is False
+    s.set_expanded(True, animated=False)
+    assert s.expanded and s.width() == 320 and seen[-1] is True
+
+
+def test_standard_starts_collapsed(qtbot):
+    s = MdStandardSideSheet(title="Filters", expanded=False)
+    qtbot.addWidget(s)
+    assert not s.expanded and s.width() == 0
+
+
+def test_standard_close_button_collapses(qtbot):
+    s = MdStandardSideSheet(title="Filters", expanded=True)
+    qtbot.addWidget(s)
+    s.collapse()  # what the close button calls
+    assert not s.expanded
+
+
+def test_standard_renders(qtbot):
+    s = MdStandardSideSheet(title="Filters", expanded=True)
+    qtbot.addWidget(s)
+    s.add_content(QLabel("Body"))
+    s.add_action("Apply")
+    s.resize(320, 400)
+    s.grab()

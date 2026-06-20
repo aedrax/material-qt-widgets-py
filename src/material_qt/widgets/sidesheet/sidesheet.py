@@ -8,15 +8,15 @@ scrollable content (:meth:`add_content`), and optional trailing action buttons
 ``closed`` fires when it finishes closing.
 
 Mirrors :class:`MdBottomSheet` (scrim + slide, no ``QGraphicsOpacityEffect``)
-but slides horizontally. The standard / persistent (non-modal) variant is
-deferred.
+but slides horizontally. :class:`MdStandardSideSheet` is the persistent
+(non-modal) variant: it docks inline in a layout and toggles its width.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
@@ -201,4 +201,102 @@ class MdSideSheet(QWidget):
         painter.fillRect(self.rect(), scrim)
 
 
-__all__ = ["MdSideSheet"]
+class MdStandardSideSheet(MaterialWidgetMixin, QWidget):
+    """A standard (persistent, non-modal) side sheet for use inline in a layout.
+
+    Unlike :class:`MdSideSheet` there is no scrim or overlay — it docks beside
+    the content (place it in a ``QHBoxLayout``) and toggles by animating its
+    width between 0 and :data:`_WIDTH`, so the neighbouring content reflows.
+    ``expand()`` / ``collapse()`` / :meth:`set_expanded`; ``toggled(bool)`` fires.
+    """
+
+    toggled = Signal(bool)
+
+    def __init__(self, parent: QWidget | None = None, *, title: str = "",
+                 side: str = "right", expanded: bool = True) -> None:
+        super().__init__(parent)
+        self._side = side if side in ("right", "left") else "right"
+        self._expanded = expanded
+        radii = (CornerRadii(_RADIUS, 0, 0, _RADIUS) if self._side == "right"
+                 else CornerRadii(0, _RADIUS, _RADIUS, 0))
+        self._init_material(
+            shape=radii, ripple=False, focus_ring=False,
+            surface_role=ColorRole.SURFACE_CONTAINER_LOW,
+        )
+        pl = QVBoxLayout(self)
+        pl.setContentsMargins(_PAD, _PAD, _PAD, _PAD)
+        pl.setSpacing(8)
+        header = QHBoxLayout()
+        self._title = QLabel(title)
+        self._title.setFont(font_for_role(TypescaleRole.TITLE_LARGE))
+        close = MdIconButton("close")
+        close.clicked.connect(self.collapse)
+        header.addWidget(self._title)
+        header.addStretch(1)
+        header.addWidget(close)
+        pl.addLayout(header)
+        self._content = QVBoxLayout()
+        self._content.setSpacing(8)
+        pl.addLayout(self._content)
+        pl.addStretch(1)
+        self._divider = MdDivider()
+        self._divider.hide()
+        pl.addWidget(self._divider)
+        self._actions = QHBoxLayout()
+        self._actions.addStretch(1)
+        pl.addLayout(self._actions)
+
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        self.setFixedWidth(_WIDTH if expanded else 0)
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(duration_ms(Duration.MEDIUM2))
+        self._anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
+        self._anim.valueChanged.connect(lambda v: self.setFixedWidth(int(v)))
+        self._restyle()
+        ThemeManager.instance().themeChanged.connect(self._restyle)
+        ThemeManager.instance().themeChanged.connect(self.update)
+
+    def _restyle(self) -> None:
+        c = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
+        self._title.setStyleSheet(f"color: {c};")
+
+    def add_content(self, widget: QWidget) -> None:
+        self._content.addWidget(widget)
+
+    def add_action(self, text: str) -> MdTextButton:
+        self._divider.show()
+        btn = MdTextButton(text)
+        self._actions.addWidget(btn)
+        return btn
+
+    @property
+    def expanded(self) -> bool:
+        return self._expanded
+
+    def expand(self) -> None:
+        self.set_expanded(True)
+
+    def collapse(self) -> None:
+        self.set_expanded(False)
+
+    def set_expanded(self, expanded: bool, *, animated: bool = True) -> None:
+        if expanded == self._expanded:
+            return
+        self._expanded = expanded
+        target = _WIDTH if expanded else 0
+        if animated and MOTION_ENABLED:
+            self._anim.stop()
+            self._anim.setStartValue(self.width())
+            self._anim.setEndValue(target)
+            self._anim.start()
+        else:
+            self.setFixedWidth(target)
+        self.toggled.emit(expanded)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        self.paint_material_surface(painter)
+
+
+__all__ = ["MdSideSheet", "MdStandardSideSheet"]

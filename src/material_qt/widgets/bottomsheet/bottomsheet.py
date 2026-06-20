@@ -18,6 +18,7 @@ from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QVariantAnimation, Signa
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QSizePolicy, QVBoxLayout, QWidget
 
+from ...core.focus_util import drop_focus_within
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
 from ...tokens.color import ColorRole
@@ -107,6 +108,9 @@ class MdBottomSheet(QWidget):
     def dismiss(self) -> None:
         if self.isHidden():
             return
+        # Drop focus before hiding (either path) so Qt doesn't reassign it to a
+        # sibling with TabFocusReason, showing a spurious keyboard focus ring.
+        drop_focus_within(self)
         # Animate only if there is distance to travel; a 0->0 tween emits no
         # valueChanged, so dismissing an already-collapsed sheet must hide now.
         if MOTION_ENABLED and self._shown > 0.01:

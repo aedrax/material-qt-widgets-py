@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 from ..theme.theme_manager import ThemeManager
 from ..theme.presets import PRESETS
 from ..core.responsive import ResponsiveHelper, WindowSizeClass, size_class_for
+from ..core.focus_util import drop_focus_within
 from ..core.motion import MOTION_ENABLED, duration_ms, easing_curve
 from ..tokens.motion import Duration, Easing
 from ..tokens.color import ColorRole
@@ -1247,19 +1248,6 @@ _DRAWER_W = 360  # matches MdNavigationDrawer width
 _SCRIM_OPACITY = 0.32
 
 
-def _drop_focus_within(container: QWidget) -> None:
-    """Clear focus if it sits inside ``container``, before the container is
-    hidden.
-
-    Hiding a focused widget makes Qt reassign focus to the next widget with
-    ``TabFocusReason`` — which Material treats as keyboard focus and shows a
-    lingering focus ring. Dropping focus first leaves nothing to reassign.
-    """
-    fw = QApplication.focusWidget()
-    if fw is not None and (fw is container or container.isAncestorOf(fw)):
-        fw.clearFocus()
-
-
 class _NavModal(QWidget):
     """An animated modal navigation drawer overlay (compact/medium widths): the
     drawer slides in from the left while the scrim fades in (M3 emphasized
@@ -1326,7 +1314,7 @@ class _NavModal(QWidget):
 
     def _on_anim_finished(self) -> None:
         if not self._opened and self._t <= 0.0:
-            _drop_focus_within(self)  # avoid a spurious focus ring on the hamburger
+            drop_focus_within(self)  # avoid a spurious focus ring on the hamburger
             self.hide()  # fully closed — remove the overlay
 
     def reset(self) -> None:
@@ -1503,7 +1491,7 @@ class GalleryWindow(QWidget):
         if self._compact and self._nav_scroll.maximumWidth() == 0:
             # Drop focus before hiding so Qt doesn't reassign it to the hamburger
             # with TabFocusReason (which would show a lingering focus ring).
-            _drop_focus_within(self._nav_scroll)
+            drop_focus_within(self._nav_scroll)
             self._nav_scroll.hide()
             drawer = self._nav_scroll.takeWidget()
             if drawer is not None:

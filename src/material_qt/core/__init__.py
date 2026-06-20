@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .elevation import ElevationPainter, apply_elevation
 from .focus_ring import FocusRingController
+from .focus_util import drop_focus_within
 from .interaction_state import InteractionState
 from .material_widget import MaterialWidget, MaterialWidgetMixin
 from .motion import MOTION_ENABLED, animate, duration_ms, easing_curve
@@ -34,6 +35,7 @@ __all__ = [
     "apply_elevation",
     "apply_typography",
     "clamp_dialog_width",
+    "drop_focus_within",
     "dp",
     "duration_ms",
     "easing_curve",

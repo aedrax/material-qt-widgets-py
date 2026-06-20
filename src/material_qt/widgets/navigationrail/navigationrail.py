@@ -1,54 +1,62 @@
 """Material 3 navigation rail for QtWidgets.
 
 Ports the Material 3 navigation rail (cf. Flutter's ``NavigationRail`` /
-``_NavigationRailDefaultsM3``) — a vertical ``surface`` rail, 80px wide, holding
-3-7 destinations with exclusive selection. Each destination is a 24px icon in a
-56x32 ``secondary-container`` pill indicator with a ``label-medium`` label below.
-An optional leading widget (e.g. a FAB or menu button) sits above the
-destinations. ``changed(index)`` fires when the active destination changes.
+``_NavigationRailDefaultsM3``) — a vertical ``surface`` rail of destinations with
+exclusive selection. Each destination is a 24px icon in a 56x32
+``secondary-container`` pill indicator. ``changed(index)`` fires when the active
+destination changes.
 
-The public API mirrors :class:`MdNavigationBar` so the two navigation widgets
-are siblings: ``changed = Signal(int)`` and
+Beyond the compact 80px rail it supports the full NavigationRail surface:
+
+* **extended** — animate to a 256px rail with labels beside the icons
+  (:meth:`set_extended`);
+* **label type** — ``"all"`` / ``"selected"`` / ``"none"`` controls compact-mode
+  labels (:meth:`set_label_type`);
+* **group alignment** — ``"top"`` / ``"center"`` / ``"bottom"`` positions the
+  destination group (:meth:`set_group_alignment`);
+* **leading / trailing** widgets pinned above / below the group.
+
+The public API mirrors :class:`MdNavigationBar`: ``changed = Signal(int)`` and
 ``add_destination(label, *, icon, active_icon)``.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QAbstractButton,
+    QButtonGroup,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
 from ...core.material_widget import MaterialWidgetMixin
+from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
 from ...core.shape_util import rounded_path
 from ...tokens.color import ColorRole
+from ...tokens.motion import Duration, Easing
 from ...tokens.shape import CornerRadii
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..icon.icon import material_symbols_font
 
 _RAIL_WIDTH = 80
+_EXTENDED_WIDTH = 256
 _ICON = 24
 _INDICATOR_W = 56
 _INDICATOR_H = 32
-_DEST_HEIGHT = 56
+_DEST_H = 56  # with a label
+_DEST_H_NO_LABEL = 48
 _LABEL_GAP = 4
 _DEST_SPACING = 12
 _TOP_PADDING = 8
+_LABEL_PAD = 12
 
 
 class _RailDestination(MaterialWidgetMixin, QAbstractButton):
-    """A single navigation-rail destination (icon pill + label below).
-
-    Mirrors :class:`MdNavigationTab`'s color logic with rail dimensions: the
-    active indicator is 56x32 (vs the bar's 64x32) and the item fills the rail
-    width.
-    """
+    """A single navigation-rail destination (icon pill + label)."""
 
     def __init__(
         self,
@@ -62,6 +70,8 @@ class _RailDestination(MaterialWidgetMixin, QAbstractButton):
         self.setText(label)
         self._icon = icon
         self._active_icon = active_icon or icon
+        self._extended = False
+        self._label_type = "all"
         self.setCheckable(True)
         self._init_material(
             shape=CornerRadii.uniform(_INDICATOR_H / 2.0),
@@ -74,11 +84,38 @@ class _RailDestination(MaterialWidgetMixin, QAbstractButton):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.toggled.connect(lambda *_: self.update())
 
+    # -- configuration (set by the rail) -----------------------------------
+
+    def set_extended(self, extended: bool) -> None:
+        self._extended = extended
+        self.updateGeometry()
+        self.update()
+
+    def set_label_type(self, label_type: str) -> None:
+        self._label_type = label_type
+        self.updateGeometry()
+        self.update()
+
+    def _shows_label(self) -> bool:
+        if self._extended or self._label_type == "all":
+            return True
+        if self._label_type == "selected":
+            return self.isChecked()
+        return False
+
+    def _height(self) -> int:
+        if self._extended or self._label_type != "none":
+            return _DEST_H
+        return _DEST_H_NO_LABEL
+
+    # -- sizing ------------------------------------------------------------
+
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(_RAIL_WIDTH, _DEST_HEIGHT)
+        w = _EXTENDED_WIDTH if self._extended else _RAIL_WIDTH
+        return QSize(w, self._height())
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(_INDICATOR_W, _DEST_HEIGHT)
+        return QSize(_INDICATOR_W, self._height())
 
     def enterEvent(self, event) -> None:  # noqa: N802
         super().enterEvent(event)
@@ -94,9 +131,18 @@ class _RailDestination(MaterialWidgetMixin, QAbstractButton):
         super().changeEvent(event)
         self.update()
 
+    # -- painting ----------------------------------------------------------
+
     def _indicator_rect(self) -> QRectF:
-        cx = self.width() / 2.0
-        return QRectF(cx - _INDICATOR_W / 2.0, 0, _INDICATOR_W, _INDICATOR_H)
+        # The icon stays centered in the compact 80px zone in both modes, so
+        # extending only reveals labels to the right.
+        cx = _RAIL_WIDTH / 2.0
+        if self._extended:
+            cy = self.height() / 2.0
+            return QRectF(cx - _INDICATOR_W / 2.0, cy - _INDICATOR_H / 2.0,
+                          _INDICATOR_W, _INDICATOR_H)
+        top = 0.0 if self._shows_label() else (self.height() - _INDICATOR_H) / 2.0
+        return QRectF(cx - _INDICATOR_W / 2.0, top, _INDICATOR_W, _INDICATOR_H)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -121,17 +167,23 @@ class _RailDestination(MaterialWidgetMixin, QAbstractButton):
                 painter.setPen(icon_color)
                 painter.drawText(indicator, Qt.AlignmentFlag.AlignCenter, glyph)
 
+        if not self._shows_label() or not self.text():
+            return
         label_color = theme.color(
             ColorRole.ON_SURFACE if active else ColorRole.ON_SURFACE_VARIANT
         )
         painter.setFont(self.font())
         painter.setPen(label_color)
-        label_rect = QRectF(
-            0, indicator.bottom() + _LABEL_GAP, self.width(),
-            _DEST_HEIGHT - indicator.bottom() - _LABEL_GAP,
-        )
-        painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop,
-                         self.text())
+        if self._extended:
+            label_rect = QRectF(_RAIL_WIDTH, 0,
+                                self.width() - _RAIL_WIDTH - _LABEL_PAD, self.height())
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignVCenter
+                             | Qt.AlignmentFlag.AlignLeft, self.text())
+        else:
+            label_rect = QRectF(0, indicator.bottom() + _LABEL_GAP, self.width(),
+                                self.height() - indicator.bottom() - _LABEL_GAP)
+            painter.drawText(label_rect, Qt.AlignmentFlag.AlignHCenter
+                             | Qt.AlignmentFlag.AlignTop, self.text())
 
 
 class MdNavigationRail(MaterialWidgetMixin, QWidget):
@@ -139,47 +191,118 @@ class MdNavigationRail(MaterialWidgetMixin, QWidget):
 
     changed = Signal(int)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        extended: bool = False,
+        label_type: str = "all",
+        group_alignment: str = "top",
+    ) -> None:
         super().__init__(parent)
         self._dests: list[_RailDestination] = []
-        self._group = QButtonGroup(self)
-        self._group.setExclusive(True)
+        self._leading: QWidget | None = None
+        self._trailing: QWidget | None = None
+        self._extended = extended
+        self._label_type = label_type
+        self._group = group_alignment
+        self._buttons = QButtonGroup(self)
+        self._buttons.setExclusive(True)
+
         self._lay = QVBoxLayout(self)
         self._lay.setContentsMargins(0, _TOP_PADDING, 0, _TOP_PADDING)
         self._lay.setSpacing(_DEST_SPACING)
-        self._lay.setAlignment(Qt.AlignmentFlag.AlignTop)
         self._init_material(
             shape=CornerRadii.uniform(0.0),
             ripple=False,
             focus_ring=False,
             surface_role=ColorRole.SURFACE,
         )
-        self.setFixedWidth(_RAIL_WIDTH)
+        self.setFixedWidth(_EXTENDED_WIDTH if extended else _RAIL_WIDTH)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
+        self._width_anim = QVariantAnimation(self)
+        self._width_anim.setDuration(duration_ms(Duration.MEDIUM2))
+        self._width_anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
+        self._width_anim.valueChanged.connect(lambda v: self.setFixedWidth(int(v)))
+        self._relayout()
+
+    # -- slots / destinations ---------------------------------------------
+
     def set_leading(self, widget: QWidget) -> None:
-        """Place a leading widget (e.g. a FAB or menu button) above the
-        destinations."""
-        self._lay.insertWidget(0, widget, 0, Qt.AlignmentFlag.AlignHCenter)
+        self._leading = widget
+        self._relayout()
+
+    def set_trailing(self, widget: QWidget) -> None:
+        self._trailing = widget
+        self._relayout()
 
     def add_destination(self, label: str, *, icon: str = "",
                         active_icon: str = "") -> _RailDestination:
         dest = _RailDestination(label, icon=icon, active_icon=active_icon)
-        self._group.addButton(dest, len(self._dests))
-        self._lay.addWidget(dest)
+        dest.set_extended(self._extended)
+        dest.set_label_type(self._label_type)
+        self._buttons.addButton(dest, len(self._dests))
         self._dests.append(dest)
         dest.toggled.connect(
             lambda on, d=dest: on and self.changed.emit(self._dests.index(d))
         )
         if len(self._dests) == 1:
             dest.setChecked(True)
+        self._relayout()
         return dest
 
+    # -- configuration -----------------------------------------------------
+
+    @property
+    def extended(self) -> bool:
+        return self._extended
+
+    def set_extended(self, extended: bool, *, animated: bool = True) -> None:
+        if extended == self._extended:
+            return
+        self._extended = extended
+        for d in self._dests:
+            d.set_extended(extended)
+        target = _EXTENDED_WIDTH if extended else _RAIL_WIDTH
+        if animated and MOTION_ENABLED:
+            self._width_anim.stop()
+            self._width_anim.setStartValue(self.width())
+            self._width_anim.setEndValue(target)
+            self._width_anim.start()
+        else:
+            self.setFixedWidth(target)
+
+    def set_label_type(self, label_type: str) -> None:
+        self._label_type = label_type
+        for d in self._dests:
+            d.set_label_type(label_type)
+
+    def set_group_alignment(self, alignment: str) -> None:
+        self._group = alignment
+        self._relayout()
+
+    # -- layout ------------------------------------------------------------
+
+    def _relayout(self) -> None:
+        while self._lay.count():
+            self._lay.takeAt(0)  # widgets stay parented to self; spacers dropped
+        if self._leading is not None:
+            self._lay.addWidget(self._leading, 0, Qt.AlignmentFlag.AlignHCenter)
+        if self._group in ("center", "bottom"):
+            self._lay.addStretch(1)
+        for d in self._dests:
+            self._lay.addWidget(d)
+        if self._group in ("center", "top"):
+            self._lay.addStretch(1)
+        if self._trailing is not None:
+            self._lay.addWidget(self._trailing, 0, Qt.AlignmentFlag.AlignHCenter)
+
     def sizeHint(self) -> QSize:  # noqa: N802
-        height = _TOP_PADDING * 2 + sum(
-            d.sizeHint().height() for d in self._dests
-        ) + _DEST_SPACING * max(0, len(self._dests) - 1)
-        return QSize(_RAIL_WIDTH, max(height, _RAIL_WIDTH))
+        w = _EXTENDED_WIDTH if self._extended else _RAIL_WIDTH
+        height = _TOP_PADDING * 2 + sum(d.sizeHint().height() for d in self._dests) \
+            + _DEST_SPACING * max(0, len(self._dests) - 1)
+        return QSize(w, max(height, _RAIL_WIDTH))
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)

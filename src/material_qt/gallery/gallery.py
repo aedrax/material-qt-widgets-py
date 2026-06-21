@@ -44,6 +44,7 @@ from ..widgets.fabmenu import MdFabMenu
 from ..widgets.loadingindicator import MdLoadingIndicator
 from ..widgets.toolbar import MdToolbar
 from ..widgets.searchbar import MdSearchBar
+from ..widgets.scrollbar import install_material_scrollbars, use_material_scrollbars
 from ..widgets.sidesheet import MdSideSheet, MdStandardSideSheet
 from ..widgets.button import (
     MdElevatedButton,
@@ -1063,6 +1064,35 @@ def _build_search_bar() -> QWidget:
     return page
 
 
+def _build_scrollbar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Scrollbar (hover the bar to thicken it)"))
+    lay.addWidget(_themed_text_label(
+        "Every scroll area in this gallery uses the Material scrollbar — a "
+        "rounded thumb that brightens and thickens on hover. The panel below "
+        "scrolls within a fixed frame to show it directly.",
+        typescale="body-medium", role=ColorRole.ON_SURFACE_VARIANT,
+    ))
+    content = QWidget()
+    cl = QVBoxLayout(content)
+    cl.setContentsMargins(0, 0, 0, 0)
+    cl.setSpacing(8)
+    for i in range(40):
+        cl.addWidget(_themed_text_label(
+            f"Scrollable item {i + 1}", typescale="body-large"))
+    cl.addStretch(1)
+    sa = QScrollArea()
+    sa.setWidgetResizable(True)
+    sa.setWidget(content)
+    sa.setFrameShape(QScrollArea.Shape.NoFrame)
+    sa.setFixedHeight(240)
+    use_material_scrollbars(sa)
+    lay.addWidget(sa)
+    lay.addStretch(1)
+    return page
+
+
 def _build_button_group() -> QWidget:
     page = _page()
     lay = page.layout()
@@ -1154,6 +1184,7 @@ _COMPONENTS = [
     ("Progress", _build_progress),
     ("Radio", _build_radio),
     ("Range slider", _build_range_slider),
+    ("Scrollbar", _build_scrollbar),
     ("Search bar", _build_search_bar),
     ("Segmented", _build_segmented),
     ("Select", _build_select),
@@ -1206,6 +1237,7 @@ COMPONENT_META: dict[str, tuple[str, str]] = {
     "Progress": ("progress_activity", "Linear and circular progress."),
     "Radio": ("radio_button_checked", "Select one option from a set."),
     "Range slider": ("tune", "Select a range between two values."),
+    "Scrollbar": ("expand", "Rounded thumb that thickens on hover."),
     "Search bar": ("search", "Field for searching app content."),
     "Segmented": ("splitscreen", "Connected toggle buttons for choices."),
     "Select": ("arrow_drop_down_circle", "Dropdown to pick from options."),
@@ -1428,6 +1460,10 @@ class GalleryWindow(QWidget):
         self._compact: bool | None = None
         self._responsive = ResponsiveHelper(self)
         self._responsive.sizeClassChanged.connect(lambda *_: self._apply_responsive())
+
+        # Give every scroll area in the window a Material scrollbar (the carousel
+        # keeps its bars off, so the blanket sweep is harmless there).
+        install_material_scrollbars(self)
 
         # Open matching the material-web.dev catalog theme by default.
         self._apply_preset(_PRESET_NAMES[0])

@@ -11,9 +11,45 @@ from material_qt.widgets.timepicker import (
     angle_to_hour24,
     angle_to_minute,
 )
-from material_qt.widgets.timepicker.timepicker import _hour24_layout
+from material_qt.widgets.timepicker.timepicker import (
+    _DIAL,
+    _OUTER_R,
+    _ClockDial,
+    _hour24_layout,
+    _pos,
+)
 
 _R = 100  # distance from center; magnitude is irrelevant to the angle
+
+
+def test_dial_draws_the_hand_line(qtbot):
+    # Regression: the face is painted with NoPen; the hand must use its own solid
+    # pen or the connecting "stick" silently vanishes (only the hub + knob show).
+    from material_qt.theme.theme_manager import ThemeManager
+    from material_qt.tokens.color import ColorRole
+
+    dial = _ClockDial()
+    dial.set_mode("hour")
+    dial.set_values(10, 30)
+    qtbot.addWidget(dial)
+    img = dial.grab().toImage()
+
+    primary = ThemeManager.instance().color(ColorRole.PRIMARY)
+    cx, cy = _DIAL / 2.0, _DIAL / 2.0
+    kx, ky = _pos(10, 30.0, cx, cy, _OUTER_R)
+
+    def close(px) -> bool:
+        return (abs(px.red() - primary.red()) < 24
+                and abs(px.green() - primary.green()) < 24
+                and abs(px.blue() - primary.blue()) < 24)
+
+    # Sample the mid-section of the hand, clear of both the centre hub and the
+    # knob — those would render even with the bug, so they can't vouch for it.
+    hits = sum(
+        close(img.pixelColor(round(cx + (kx - cx) * t), round(cy + (ky - cy) * t)))
+        for t in (0.4, 0.45, 0.5, 0.55, 0.6)
+    )
+    assert hits > 0, "no primary-colored pixels along the hand — stick missing"
 
 
 def test_angle_to_hour_cardinals():

@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QLabel, QScrollArea, QVBoxLayout, QWidget
 from material_qt.widgets.scrollbar import scrollbar as mod
 from material_qt.widgets.scrollbar import (
     MdScrollBar,
+    disable_horizontal_scroll,
     install_material_scrollbars,
     thumb_metrics,
     use_material_scrollbars,
@@ -119,6 +120,33 @@ def test_use_material_scrollbars_replaces_both_axes(qtbot):
     use_material_scrollbars(sa)
     assert isinstance(sa.verticalScrollBar(), MdScrollBar)
     assert isinstance(sa.horizontalScrollBar(), MdScrollBar)
+
+
+def test_disable_horizontal_scroll_pins_range(qtbot):
+    # A fixed-width child wider than the (gutter-narrowed) viewport would give the
+    # horizontal bar a nonzero range -> "play". Disabling pins it to zero while
+    # leaving vertical scrolling intact.
+    content = QWidget()
+    content.setFixedWidth(500)
+    cl = QVBoxLayout(content)
+    for i in range(40):
+        cl.addWidget(QLabel(f"row {i}"))
+    sa = QScrollArea()
+    sa.setWidget(content)
+    sa.setFixedSize(300, 200)
+    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    qtbot.addWidget(sa)
+    sa.show()
+
+    hb = sa.horizontalScrollBar()
+    assert hb.maximum() > 0  # fixed-width content overflows -> would scroll
+
+    disable_horizontal_scroll(sa)
+    assert hb.maximum() == 0
+    # A scroll attempt can't move it, and vertical still works.
+    hb.setValue(50)
+    assert hb.value() == 0
+    assert sa.verticalScrollBar().maximum() > 0
 
 
 def test_install_walks_tree_and_is_idempotent(qtbot):

@@ -25,7 +25,7 @@ from __future__ import annotations
 import math
 
 from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTime, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QIntValidator, QPainter
+from PySide6.QtGui import QColor, QIntValidator, QPainter, QPen
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -154,8 +154,9 @@ class _ClockDial(QWidget):
     def _paint_hand(self, painter: QPainter, cx: float, cy: float,
                     kx: float, ky: float) -> None:
         primary = ThemeManager.instance().color(ColorRole.PRIMARY)
-        pen = painter.pen()
-        pen.setColor(primary)
+        # Use a fresh solid pen: the caller paints the face with NoPen, and
+        # inheriting that style here would silently drop the hand line.
+        pen = QPen(primary)
         pen.setWidthF(2.0)
         painter.setPen(pen)
         painter.drawLine(int(cx), int(cy), int(kx), int(ky))

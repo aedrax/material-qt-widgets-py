@@ -114,6 +114,37 @@ def test_cancel_emits_rejected_and_closed(qtbot):
     assert rej == [True] and clo == [True] and tp.isHidden()
 
 
+def test_close_does_not_leave_focus_ring_on_sibling(qtbot):
+    # Closing the modal (hide) while it holds focus must not make Qt reassign
+    # TabFocusReason focus to a sibling, spuriously showing the sibling's
+    # keyboard focus ring (cf. the gallery app-bar theme toggle).
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication, QVBoxLayout
+
+    from material_qt.widgets.iconbutton import MdIconButton
+
+    host = QWidget()
+    host.resize(600, 600)
+    layout = QVBoxLayout(host)
+    sibling = MdIconButton("dark_mode")  # focus_ring=True
+    layout.addWidget(sibling)
+    qtbot.addWidget(host)
+    host.show()
+    # Focus only transfers while the top-level window is active; offscreen
+    # windows aren't auto-activated, so force it for the repro.
+    QApplication.setActiveWindow(host)
+
+    tp = MdTimePicker(host, initial_time=QTime(10, 10))
+    tp.open()  # grabs focus
+    sibling.setFocus(Qt.FocusReason.MouseFocusReason)
+    tp.setFocus(Qt.FocusReason.OtherFocusReason)  # focus is back inside the modal
+    tp._on_ok()  # accept -> close -> hide
+
+    assert tp.isHidden()
+    assert not sibling.hasFocus()
+    assert not sibling.focus_ring.visible
+
+
 def test_renders(qtbot):
     host = QWidget()
     host.resize(600, 600)

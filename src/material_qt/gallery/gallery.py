@@ -14,12 +14,10 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLayout,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -34,8 +32,13 @@ from ..tokens.motion import Duration, Easing
 from ..tokens.color import ColorRole
 from ..tokens.typography import TypescaleRole, spec_for
 from ..core.typography_util import font_for_role
+from ..widgets.autocomplete import MdOutlinedAutocomplete
+from ..widgets.avatar import MdCircleAvatar
 from ..widgets.badge import MdBadge
 from ..widgets.banner import MdBanner
+from ..widgets.bottomappbar import MdBottomAppBar
+from ..widgets.refreshindicator import MdRefreshIndicator
+from ..widgets.stepper import MdStep, MdStepper
 from ..widgets.bottomsheet import MdBottomSheet, MdStandardBottomSheet
 from ..widgets.buttongroup import MdButtonGroup
 from ..widgets.carousel import MdCarousel, MdWeightedCarousel
@@ -43,7 +46,7 @@ from ..widgets.expansionpanel import MdExpansionPanel
 from ..widgets.fabmenu import MdFabMenu
 from ..widgets.loadingindicator import MdLoadingIndicator
 from ..widgets.toolbar import MdToolbar
-from ..widgets.searchbar import MdSearchBar
+from ..widgets.searchbar import MdSearchBar, MdSearchView
 from ..widgets.scrollbar import (
     disable_horizontal_scroll,
     install_material_scrollbars,
@@ -59,8 +62,8 @@ from ..widgets.button import (
 )
 from ..widgets.card import CardVariant, MdCard
 from ..widgets.checkbox import MdCheckbox
-from ..widgets.datatable import MdDataTable
-from ..widgets.datepicker import MdDatePicker
+from ..widgets.datatable import MdDataTable, MdPaginatedDataTable
+from ..widgets.datepicker import MdCalendarDatePicker, MdDatePicker
 from ..widgets.dialog import MdDialog
 from ..widgets.chips import (
     MdAssistChip,
@@ -1060,8 +1063,21 @@ def _build_search_bar() -> QWidget:
     lay = page.layout()
     lay.addWidget(_section("Search bar"))
     bar = MdSearchBar(placeholder="Search your library", trailing_icon="mic")
-    status = QLabel("(type and press Enter)")
+    status = QLabel("(type and press Enter, or click to open full-screen)")
     bar.submitted.connect(lambda q: status.setText(f"Searched: {q}"))
+
+    fruits = ["Apple", "Apricot", "Banana", "Blueberry", "Cherry", "Mango"]
+
+    def open_view() -> None:
+        view = MdSearchView(page.window(), view_hint_text="Search fruit")
+        view.set_suggestions(fruits)
+        view.text_changed.connect(
+            lambda q: view.set_suggestions(
+                [f for f in fruits if q.lower() in f.lower()]))
+        view.suggestionSelected.connect(lambda v: status.setText(f"Picked: {v}"))
+        view.open()
+
+    bar.clicked.connect(open_view)
     lay.addWidget(bar)
     lay.addWidget(status)
     lay.addStretch(1)
@@ -1093,6 +1109,124 @@ def _build_scrollbar() -> QWidget:
     sa.setFixedHeight(240)
     use_material_scrollbars(sa)
     lay.addWidget(sa)
+    lay.addStretch(1)
+    return page
+
+
+def _build_autocomplete() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Autocomplete (type to filter)"))
+    ac = MdOutlinedAutocomplete(
+        label="Fruit",
+        options=["Apple", "Apricot", "Banana", "Blueberry", "Cherry",
+                 "Date", "Fig", "Grape", "Mango", "Orange"],
+    )
+    status = QLabel("(no selection)")
+    ac.selected.connect(lambda v: status.setText(f"Selected: {v}"))
+    lay.addWidget(ac)
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
+def _build_avatar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Circle avatar"))
+    lay.addWidget(_row(
+        MdCircleAvatar(text="AB"),
+        MdCircleAvatar(text="MJ", background_role=ColorRole.TERTIARY_CONTAINER,
+                       foreground_role=ColorRole.ON_TERTIARY_CONTAINER),
+        MdCircleAvatar(text="QT", radius=28),
+    ))
+    lay.addStretch(1)
+    return page
+
+
+def _build_bottom_app_bar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Bottom app bar (with cradled FAB)"))
+    bar = MdBottomAppBar(notch=True)
+    for ic in ("menu", "search", "favorite", "more_vert"):
+        bar.add_action(ic)
+    bar.set_fab(MdFab("add"))
+    lay.addWidget(bar)
+    lay.addStretch(1)
+    return page
+
+
+def _build_calendar() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Calendar date picker (inline)"))
+    cal = MdCalendarDatePicker()
+    status = QLabel("(no date)")
+    cal.dateChanged.connect(lambda d: status.setText(d.toString("dddd, MMMM d, yyyy")))
+    lay.addWidget(_row(cal))
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
+def _build_paginated_table() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Paginated data table"))
+    table = MdPaginatedDataTable(rows_per_page=5)
+    table.set_columns(["Item", "Qty", "Price"], numeric=[False, True, True])
+    table.set_rows([[f"Item {i}", str(i * 2), f"${i * 3}.00"] for i in range(1, 24)])
+    lay.addWidget(table)
+    lay.addStretch(1)
+    return page
+
+
+def _build_refresh_indicator() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Refresh indicator"))
+    content = QWidget()
+    cl = QVBoxLayout(content)
+    cl.setContentsMargins(0, 0, 0, 0)
+    for i in range(8):
+        cl.addWidget(_themed_text_label(f"Row {i + 1}", typescale="body-large"))
+    cl.addStretch(1)
+    ri = MdRefreshIndicator(content)
+    ri.setFixedHeight(220)
+    start = MdFilledButton("Refresh")
+    stop = MdTextButton("Done")
+    start.clicked.connect(ri.begin)
+    stop.clicked.connect(ri.end)
+    lay.addWidget(_row(start, stop))
+    lay.addWidget(ri)
+    lay.addStretch(1)
+    return page
+
+
+def _build_stepper() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Stepper"))
+    steps = [
+        MdStep("Account", _themed_text_label("Set up your account.",
+                                             typescale="body-medium")),
+        MdStep("Address", _themed_text_label("Enter your shipping address.",
+                                             typescale="body-medium")),
+        MdStep("Confirm", _themed_text_label("Review and submit your order.",
+                                             typescale="body-medium")),
+    ]
+    stepper = MdStepper(steps)
+    state = {"i": 0}
+
+    def go(i: int) -> None:
+        state["i"] = max(0, min(i, len(steps) - 1))
+        stepper.set_current_step(state["i"])
+
+    stepper.continued.connect(lambda: go(state["i"] + 1))
+    stepper.canceled.connect(lambda: go(state["i"] - 1))
+    stepper.stepTapped.connect(go)
+    lay.addWidget(stepper)
     lay.addStretch(1)
     return page
 
@@ -1158,11 +1292,15 @@ def _page() -> QWidget:
 
 
 _COMPONENTS = [
+    ("Autocomplete", _build_autocomplete),
+    ("Avatar", _build_avatar),
     ("Badge", _build_badge),
     ("Banner", _build_banner),
+    ("Bottom app bar", _build_bottom_app_bar),
     ("Bottom sheet", _build_bottom_sheet),
     ("Button", _build_button),
     ("Button group", _build_button_group),
+    ("Calendar", _build_calendar),
     ("Card", _build_card),
     ("Carousel", _build_carousel),
     ("Checkbox", _build_checkbox),
@@ -1185,9 +1323,11 @@ _COMPONENTS = [
     ("Navigation drawer", _build_navigation_drawer),
     ("Navigation rail", _build_navigation_rail),
     ("Navigation tab", _build_navigation_tab),
+    ("Paginated table", _build_paginated_table),
     ("Progress", _build_progress),
     ("Radio", _build_radio),
     ("Range slider", _build_range_slider),
+    ("Refresh indicator", _build_refresh_indicator),
     ("Scrollbar", _build_scrollbar),
     ("Search bar", _build_search_bar),
     ("Segmented", _build_segmented),
@@ -1196,6 +1336,7 @@ _COMPONENTS = [
     ("Slider", _build_slider),
     ("Snackbar", _build_snackbar),
     ("Split button", _build_split_button),
+    ("Stepper", _build_stepper),
     ("Switch", _build_switch),
     ("Tabs", _build_tabs),
     ("Text field", _build_text_field),
@@ -1211,11 +1352,15 @@ _COMPONENTS = [
 # the nav drawer destinations and each page's hero header — mirroring the
 # material-web.dev catalog.
 COMPONENT_META: dict[str, tuple[str, str]] = {
+    "Autocomplete": ("manage_search", "Text field that filters options as you type."),
+    "Avatar": ("account_circle", "Circular image or initials for a person."),
     "Badge": ("notifications", "Small status indicator overlaid on an anchor."),
     "Banner": ("campaign", "Prominent inline message with actions."),
+    "Bottom app bar": ("dock_to_bottom", "Bottom action bar with an optional FAB."),
     "Bottom sheet": ("vertical_align_bottom", "Sheet anchored to the bottom edge."),
     "Button": ("smart_button", "Five common button variants for actions."),
     "Button group": ("page_control", "Connected pills, single- or multi-select."),
+    "Calendar": ("calendar_month", "Inline calendar for selecting a date."),
     "Card": ("space_dashboard", "Container for related content and actions."),
     "Carousel": ("view_carousel", "Scrollable row of contained items."),
     "Checkbox": ("check_box", "Select one or more items from a set."),
@@ -1238,9 +1383,11 @@ COMPONENT_META: dict[str, tuple[str, str]] = {
     "Navigation drawer": ("menu_open", "Side panel of navigation destinations."),
     "Navigation rail": ("view_sidebar", "Vertical side rail switching destinations."),
     "Navigation tab": ("tab", "A single navigation destination."),
+    "Paginated table": ("table_rows", "Data table with page-by-page navigation."),
     "Progress": ("progress_activity", "Linear and circular progress."),
     "Radio": ("radio_button_checked", "Select one option from a set."),
     "Range slider": ("tune", "Select a range between two values."),
+    "Refresh indicator": ("refresh", "Pull-to-refresh spinner over content."),
     "Scrollbar": ("expand", "Rounded thumb that thickens on hover."),
     "Search bar": ("search", "Field for searching app content."),
     "Segmented": ("splitscreen", "Connected toggle buttons for choices."),
@@ -1249,6 +1396,7 @@ COMPONENT_META: dict[str, tuple[str, str]] = {
     "Slider": ("tune", "Select a value from a range."),
     "Snackbar": ("info", "Brief message with an optional action."),
     "Split button": ("more_horiz", "Primary action plus a dropdown."),
+    "Stepper": ("format_list_numbered", "Guide a user through ordered steps."),
     "Switch": ("toggle_on", "Toggle the state of a single item."),
     "Tabs": ("tab", "Organize content across primary/secondary tabs."),
     "Text field": ("text_fields", "Let users enter and edit text."),

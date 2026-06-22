@@ -78,6 +78,41 @@ def test_close_does_not_leave_focus_ring_on_sibling(qtbot):
     assert not sibling.focus_ring.visible
 
 
+def test_barrier_not_dismissible_ignores_scrim_and_escape(qtbot):
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QKeyEvent, QMouseEvent
+
+    host = _host(qtbot)
+    host.show()
+    dlg = MdDialog(host, headline="Saving...", barrier_dismissible=False)
+    rejected = []
+    dlg.rejected.connect(lambda: rejected.append(1))
+    dlg.open()
+    # Click on the scrim (top-left corner, outside the centered panel).
+    press = QMouseEvent(
+        QEvent.Type.MouseButtonPress, QPointF(2, 2), Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+    )
+    dlg.mousePressEvent(press)
+    esc = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier)
+    dlg.keyPressEvent(esc)
+    assert rejected == [] and dlg.isVisible()
+    # Toggling the flag back on restores dismissal.
+    dlg.set_barrier_dismissible(True)
+    dlg.mousePressEvent(press)
+    assert rejected == [1] and not dlg.isVisible()
+
+
+def test_add_option_returns_clickable_row(qtbot):
+    host = _host(qtbot)
+    dlg = MdDialog(host, headline="Pick one")
+    fired = []
+    opt = dlg.add_option("Photos")
+    opt.clicked.connect(lambda: fired.append("photos"))
+    opt.click()
+    assert fired == ["photos"]
+
+
 def test_renders(qtbot):
     host = _host(qtbot)
     host.show()

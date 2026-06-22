@@ -20,6 +20,8 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QVariantAnimation, Signa
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
+from ..icon.icon import MdIcon
+
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
 from ...core.typography_util import font_for_role
@@ -52,10 +54,15 @@ class MdSnackbar(MaterialWidgetMixin, QWidget):
         *,
         action_label: str = "",
         duration: int = _DEFAULT_DURATION,
+        behavior: str = "floating",
+        show_close_icon: bool = False,
     ) -> None:
         super().__init__(parent)
         self._duration = duration
         self._shown = 0.0  # 0 = below the edge, 1 = resting position
+        # Flutter's SnackBarBehavior: "floating" (inset, rounded) or "fixed"
+        # (flush full-width against the bottom edge).
+        self._behavior = behavior if behavior in ("floating", "fixed") else "floating"
 
         self._init_material(
             shape=ShapeScale.EXTRA_SMALL,
@@ -66,9 +73,8 @@ class MdSnackbar(MaterialWidgetMixin, QWidget):
         )
 
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(
-            _PAD_TEXT, 0, _PAD_ACTION if action_label else _PAD_TEXT, 0
-        )
+        trailing = _PAD_ACTION if (action_label or show_close_icon) else _PAD_TEXT
+        lay.setContentsMargins(_PAD_TEXT, 0, trailing, 0)
         lay.setSpacing(8)
 
         self._label = QLabel(text)
@@ -84,6 +90,14 @@ class MdSnackbar(MaterialWidgetMixin, QWidget):
             a.mousePressEvent = self._on_action  # type: ignore[method-assign]
             self._action_label = a
             lay.addWidget(a)
+
+        self._close_icon: MdIcon | None = None
+        if show_close_icon:
+            ci = MdIcon("close", size=20, color_role=ColorRole.INVERSE_ON_SURFACE)
+            ci.setCursor(Qt.CursorShape.PointingHandCursor)
+            ci.mousePressEvent = self._on_close_icon  # type: ignore[method-assign]
+            self._close_icon = ci
+            lay.addWidget(ci)
 
         self.setMinimumHeight(_MIN_H)
 
@@ -148,6 +162,14 @@ class MdSnackbar(MaterialWidgetMixin, QWidget):
         self.action.emit()
         self.dismiss()
 
+    def _on_close_icon(self, event) -> None:
+        # The close icon dismisses without emitting `action`.
+        self.dismiss()
+
+    @property
+    def behavior(self) -> str:
+        return self._behavior
+
     # -- geometry ----------------------------------------------------------
 
     def _set_shown(self, value) -> None:
@@ -163,10 +185,17 @@ class MdSnackbar(MaterialWidgetMixin, QWidget):
         if host is None:
             return
         avail = host.width()
-        w = max(_MIN_W, min(_MAX_W, avail - 2 * _MARGIN))
         h = max(_MIN_H, self.sizeHint().height())
-        x = int((avail - w) / 2)
-        resting_y = host.height() - h - _MARGIN
+        if self._behavior == "fixed":
+            # Flush full-width, no bottom margin (pinned to the edge).
+            w = avail
+            x = 0
+            margin = 0
+        else:
+            w = max(_MIN_W, min(_MAX_W, avail - 2 * _MARGIN))
+            x = int((avail - w) / 2)
+            margin = _MARGIN
+        resting_y = host.height() - h - margin
         offscreen_y = host.height()
         y = int(offscreen_y + (resting_y - offscreen_y) * self._shown)
         self.setGeometry(x, y, int(w), int(h))

@@ -20,8 +20,17 @@ them (cf. Flutter's ``_MediumScrollUnderFlexibleConfig`` /
 :meth:`set_collapse_fraction` (``0.0`` expanded, ``1.0`` collapsed) or wire it to
 a scroll view with :meth:`attach_scroll_area`. As the bar collapses the bottom
 ``headline`` title cross-fades out while a ``title-large`` title fades in at the
-top-row (small-variant) position, and the container tints from ``surface`` to
-``surface-container`` — matching M3 scroll-under behavior.
+top-row (small-variant) position, the container tints from ``surface`` to
+``surface-container``, and the bar rises from elevation 0 to
+``scrolled_under_elevation`` (M3 level 3 by default) — matching M3 scroll-under
+behavior (cf. Flutter ``AppBar.scrolledUnderElevation``).
+
+Bottom slot
+-----------
+A persistent widget (typically a tab bar; cf. Flutter ``AppBar.bottom``) can be
+hosted below the toolbar rows via the ``bottom`` constructor kwarg or
+:meth:`set_bottom`; the bar's height grows to fit it. The bottom slot is not
+affected by scroll-under collapse.
 """
 
 from __future__ import annotations
@@ -42,6 +51,7 @@ from ...core.material_widget import MaterialWidgetMixin
 from ...core.shape_util import rounded_path
 from ...core.typography_util import font_for_role
 from ...tokens.color import ColorRole
+from ...tokens.elevation import ElevationLevel
 from ...tokens.shape import ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
@@ -106,13 +116,25 @@ class MdTopAppBar(MaterialWidgetMixin, QWidget):
         *,
         variant: TopAppBarVariant = TopAppBarVariant.SMALL,
         leading: QWidget | None = None,
+        toolbar_height: int | None = None,
+        bottom: QWidget | None = None,
+        scrolled_under_elevation: ElevationLevel | int = ElevationLevel.LEVEL3,
     ) -> None:
         super().__init__(parent)
         self._variant = variant
         self._leading = leading
-        self._expanded_h = _HEIGHTS[variant]
-        self._collapse_distance = self._expanded_h - _ROW_HEIGHT  # 0 for single-row
+        # Per-row toolbar height; Flutter's ``AppBar.toolbarHeight`` overrides the
+        # 64px default and shifts every variant's expanded height by the delta.
+        self._row_height = _ROW_HEIGHT if toolbar_height is None else int(toolbar_height)
+        self._expanded_h = _HEIGHTS[variant] + (self._row_height - _ROW_HEIGHT)
+        self._collapse_distance = self._expanded_h - self._row_height  # 0 single-row
         self._collapse_t = 0.0
+        self._scrolled_under_elevation = ElevationLevel(int(scrolled_under_elevation))
+
+        # Optional persistent bottom slot (cf. Flutter ``AppBar.bottom``), e.g. a
+        # tab bar. It sits below the toolbar rows and is not collapsed.
+        self._bottom = bottom
+        self._bottom_h = max(0, bottom.sizeHint().height()) if bottom is not None else 0
 
         self._title = QLabel(title)
         self._title.setFont(font_for_role(_TITLE_TYPESCALE[variant]))
@@ -137,7 +159,7 @@ class MdTopAppBar(MaterialWidgetMixin, QWidget):
             focus_ring=False,
             surface_role=ColorRole.SURFACE,
         )
-        self.setFixedHeight(self._expanded_h)
+        self.setFixedHeight(self._expanded_h + self._bottom_h)
 
         self._restyle_titles()
         ThemeManager.instance().themeChanged.connect(self._restyle_titles)
@@ -145,11 +167,29 @@ class MdTopAppBar(MaterialWidgetMixin, QWidget):
     # -- layout ------------------------------------------------------------
 
     def _build_layout(self) -> None:
+        # The toolbar rows live in a content holder whose height is what scroll
+        # collapse animates; an optional persistent bottom slot is stacked under
+        # it (and is *not* collapsed).
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._content = QWidget(self)
+        self._content.setFixedHeight(self._expanded_h)
+        self._build_content(self._content)
+        outer.addWidget(self._content)
+
+        if self._bottom is not None:
+            outer.addWidget(self._bottom)
+        else:
+            outer.addStretch(0)
+
+    def _build_content(self, holder: QWidget) -> None:
         if self._variant in _TWO_ROW:
             # Top row: leading + collapsed title at the start, actions at the end.
-            outer = QVBoxLayout(self)
-            outer.setContentsMargins(0, 0, 0, 0)
-            outer.setSpacing(0)
+            inner = QVBoxLayout(holder)
+            inner.setContentsMargins(0, 0, 0, 0)
+            inner.setSpacing(0)
 
             top = QHBoxLayout()
             top.setContentsMargins(_PAD, 0, _PAD, 0)
@@ -163,19 +203,19 @@ class MdTopAppBar(MaterialWidgetMixin, QWidget):
             top.addLayout(self._actions_lay)
             top_holder = QWidget()
             top_holder.setLayout(top)
-            top_holder.setFixedHeight(_ROW_HEIGHT)
+            top_holder.setFixedHeight(self._row_height)
 
             title_row = QHBoxLayout()
             title_row.setContentsMargins(_PAD, 0, _PAD, _PAD)
             title_row.addWidget(self._title)
             title_row.addStretch(1)
 
-            outer.addWidget(top_holder)
-            outer.addLayout(title_row)
+            inner.addWidget(top_holder)
+            inner.addLayout(title_row)
             return
 
         # Single-row (small / center): leading | title | actions.
-        row = QHBoxLayout(self)
+        row = QHBoxLayout(holder)
         row.setContentsMargins(_PAD, 0, _PAD, 0)
         row.setSpacing(0)
         row.addWidget(self._first_row_leading())
@@ -221,16 +261,49 @@ class MdTopAppBar(MaterialWidgetMixin, QWidget):
         self._actions_lay.addWidget(button)
         return button
 
+    def set_bottom(self, widget: QWidget | None) -> None:
+        """Set (or clear) the persistent bottom slot, e.g. a tab bar.
+
+        Mirrors Flutter's ``AppBar.bottom``; the bar's height grows to fit it.
+        """
+        outer = self.layout()
+        # Slot 0 is always the content holder; slot 1 is the bottom widget or a
+        # placeholder stretch. Remove slot 1 and replace it.
+        if outer.count() > 1:
+            item = outer.takeAt(1)
+            old = item.widget()
+            if old is not None:
+                old.setParent(None)
+        self._bottom = widget
+        self._bottom_h = max(0, widget.sizeHint().height()) if widget is not None else 0
+        if widget is not None:
+            outer.addWidget(widget)
+        else:
+            outer.addStretch(0)
+        self.setFixedHeight(self._current_total())
+
+    def _current_total(self) -> int:
+        content_h = round(self._expanded_h - self._collapse_distance * self._collapse_t)
+        return content_h + self._bottom_h
+
     def set_collapse_fraction(self, t: float) -> None:
         """Set the scroll-under collapse, ``0.0`` expanded .. ``1.0`` collapsed.
 
         No-op for the single-row CENTER/SMALL variants. Out-of-range values are
-        clamped.
+        clamped. As the bar collapses it rises from elevation 0 to
+        ``scrolled_under_elevation`` (cf. Flutter ``AppBar.scrolledUnderElevation``).
         """
         t = max(0.0, min(1.0, t))
         self._collapse_t = t
         if self._collapse_distance:
-            self.setFixedHeight(round(self._expanded_h - self._collapse_distance * t))
+            content_h = round(self._expanded_h - self._collapse_distance * t)
+            self._content.setFixedHeight(content_h)
+            self.setFixedHeight(content_h + self._bottom_h)
+            # Scroll-under elevation: 0 when expanded, target when scrolled under.
+            # Only re-apply on change — apply_elevation rebuilds the shadow effect.
+            level = self._scrolled_under_elevation if t > 0.0 else ElevationLevel.LEVEL0
+            if level != self._elevation:
+                self.set_elevation(level)
         self._restyle_titles()
         self.update()
 

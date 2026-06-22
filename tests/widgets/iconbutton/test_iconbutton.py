@@ -42,3 +42,13 @@ def test_size_and_render(qtbot):
         assert b.sizeHint().width() == 40 and b.sizeHint().height() == 40
         b.resize(b.sizeHint())
         b.grab()
+
+
+def test_tooltip_and_long_press(qtbot):
+    b = MdIconButton("favorite", tooltip="Like")
+    qtbot.addWidget(b)
+    assert b.toolTip() == "Like"
+    fired = []
+    b.longPressed.connect(lambda: fired.append(1))
+    b._emit_long_press()
+    assert fired == [1]

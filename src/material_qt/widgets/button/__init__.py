@@ -2,6 +2,7 @@
 
 from .button import (
     ButtonStyle,
+    IconAlignment,
     MdButton,
     MdElevatedButton,
     MdFilledButton,
@@ -12,6 +13,7 @@ from .button import (
 
 __all__ = [
     "ButtonStyle",
+    "IconAlignment",
     "MdButton",
     "MdElevatedButton",
     "MdFilledButton",

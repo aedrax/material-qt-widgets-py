@@ -1,5 +1,15 @@
-"""Material 3 modal date picker."""
+"""Material 3 modal + inline date pickers."""
 
-from .datepicker import MdDatePicker, first_column
+from .datepicker import (
+    MdCalendarDatePicker,
+    MdDatePicker,
+    day_enabled,
+    first_column,
+)
 
-__all__ = ["MdDatePicker", "first_column"]
+__all__ = [
+    "MdCalendarDatePicker",
+    "MdDatePicker",
+    "day_enabled",
+    "first_column",
+]

@@ -13,9 +13,12 @@ from PySide6.QtWidgets import (
 )
 
 from ...theme.theme_manager import ThemeManager, ThemeMode
+from PySide6.QtWidgets import QButtonGroup
+
 from .chips import (
     MdAssistChip,
     MdChipSet,
+    MdChoiceChip,
     MdFilterChip,
     MdInputChip,
     MdSuggestionChip,
@@ -30,17 +33,28 @@ class Demo(QWidget):
         root.setContentsMargins(32, 24, 32, 24)
         root.setSpacing(14)
 
-        root.addWidget(QLabel("Assist / Suggestion"))
+        root.addWidget(QLabel("Assist / Suggestion (+ elevated)"))
         s1 = MdChipSet()
         s1.add_chip(MdAssistChip("Add to calendar", icon="event"))
         s1.add_chip(MdSuggestionChip("Suggestion"))
+        s1.add_chip(MdAssistChip("Elevated", icon="bolt", elevated=True))
         root.addWidget(s1)
 
-        root.addWidget(QLabel("Filter (selectable)"))
+        root.addWidget(QLabel("Choice (single-select)"))
+        s_choice = MdChipSet()
+        group = QButtonGroup(self)
+        group.setExclusive(True)
+        for i, name in enumerate(("Small", "Medium", "Large")):
+            chip = MdChoiceChip(name, selected=(i == 0))
+            group.addButton(chip)
+            s_choice.add_chip(chip)
+        root.addWidget(s_choice)
+
+        root.addWidget(QLabel("Filter (selectable; last is deletable)"))
         s2 = MdChipSet()
         s2.add_chip(MdFilterChip("All", selected=True))
         s2.add_chip(MdFilterChip("Unread"))
-        s2.add_chip(MdFilterChip("Starred"))
+        s2.add_chip(MdFilterChip("Starred", deletable=True))
         root.addWidget(s2)
 
         root.addWidget(QLabel("Input (removable)"))

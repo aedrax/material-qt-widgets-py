@@ -77,8 +77,54 @@ def test_animated_dismiss_hides_and_emits(qtbot):
     assert seen == [True]
 
 
+def test_fixed_behavior_spans_full_width(qtbot, no_motion):
+    host = _host(qtbot)
+    sb = MdSnackbar(host, "Saved", behavior="fixed")
+    sb.open()
+    assert sb.behavior == "fixed"
+    # Fixed snackbars are flush full-width with no horizontal margin.
+    assert sb.geometry().left() == 0
+    assert sb.geometry().width() == host.width()
+    assert sb.geometry().bottom() >= host.height() - 1
+
+
+def test_floating_behavior_is_inset(qtbot, no_motion):
+    host = _host(qtbot)
+    sb = MdSnackbar(host, "Saved")  # default floating
+    sb.open()
+    assert sb.behavior == "floating"
+    assert sb.geometry().left() > 0
+    assert sb.geometry().width() < host.width()
+
+
+def test_close_icon_dismisses_without_action(qtbot, no_motion):
+    host = _host(qtbot)
+    sb = MdSnackbar(host, "Saved", show_close_icon=True)
+    actions, dismissed = [], []
+    sb.action.connect(lambda: actions.append(True))
+    sb.dismissed.connect(lambda: dismissed.append(True))
+    sb.open()
+    assert sb._close_icon is not None
+    sb._on_close_icon(None)
+    assert actions == [] and dismissed == [True] and sb.isHidden()
+
+
+def test_close_icon_receives_real_click(qtbot, no_motion):
+    # The icon must actually receive press events (icons can be mouse-transparent).
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    host = _host(qtbot)
+    sb = MdSnackbar(host, "Saved", show_close_icon=True)
+    dismissed = []
+    sb.dismissed.connect(lambda: dismissed.append(True))
+    sb.open()
+    QTest.mouseClick(sb._close_icon, Qt.MouseButton.LeftButton)
+    assert dismissed == [True] and sb.isHidden()
+
+
 def test_renders(qtbot):
     host = _host(qtbot)
-    sb = MdSnackbar(host, "Message text", action_label="Action")
+    sb = MdSnackbar(host, "Message text", action_label="Action", show_close_icon=True)
     sb.open()
     sb.grab()

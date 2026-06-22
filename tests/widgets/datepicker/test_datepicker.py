@@ -5,7 +5,12 @@ from __future__ import annotations
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 
-from material_qt.widgets.datepicker import MdDatePicker, first_column
+from material_qt.widgets.datepicker import (
+    MdCalendarDatePicker,
+    MdDatePicker,
+    day_enabled,
+    first_column,
+)
 from material_qt.widgets.iconbutton import MdIconButton
 
 
@@ -102,3 +107,143 @@ def test_renders(qtbot):
     dp = MdDatePicker(host, initial_date=QDate(2026, 6, 15))
     dp.open()
     dp.grab()
+
+
+# -- range / predicate ----------------------------------------------------
+
+
+def test_day_enabled_helper():
+    lo, hi = QDate(2026, 6, 10), QDate(2026, 6, 20)
+    assert not day_enabled(QDate(2026, 6, 9), first_date=lo, last_date=hi, predicate=None)
+    assert day_enabled(QDate(2026, 6, 10), first_date=lo, last_date=hi, predicate=None)
+    assert day_enabled(QDate(2026, 6, 20), first_date=lo, last_date=hi, predicate=None)
+    assert not day_enabled(QDate(2026, 6, 21), first_date=lo, last_date=hi, predicate=None)
+    # Open-ended bounds.
+    assert day_enabled(QDate(1900, 1, 1), first_date=None, last_date=hi, predicate=None)
+    # Predicate veto.
+    weekday = lambda d: d.dayOfWeek() <= 5  # noqa: E731
+    sat = QDate(2026, 6, 13)
+    assert sat.dayOfWeek() == 6
+    assert not day_enabled(sat, first_date=None, last_date=None, predicate=weekday)
+
+
+def test_range_disables_out_of_range_cells(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    dp = MdDatePicker(
+        host,
+        initial_date=QDate(2026, 6, 15),
+        first_date=QDate(2026, 6, 10),
+        last_date=QDate(2026, 6, 20),
+    )
+    offset = first_column(2026, 6)
+    # Day 5 is before firstDate -> disabled and inert.
+    cell5 = dp._cells[offset + 4]
+    assert cell5._date == QDate(2026, 6, 5)
+    assert cell5._enabled is False
+    # Clicking a disabled cell does not change the selection.
+    before = dp.selected_date
+    cell5.mousePressEvent(_press_event(cell5))
+    assert dp.selected_date == before
+    # Day 15 is in range and selectable.
+    assert dp._cells[offset + 14]._enabled is True
+
+
+def test_predicate_disables_and_ok_gating(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    # Only even days selectable.
+    dp = MdDatePicker(
+        host,
+        initial_date=QDate(2026, 6, 14),
+        selectable_day_predicate=lambda d: d.day() % 2 == 0,
+    )
+    assert dp._ok.isEnabled()  # 14 is even
+    # Selecting an odd day is impossible via cells, but a programmatic out-of-range
+    # selection must disable OK rather than emit an invalid date.
+    dp._selected = QDate(2026, 6, 13)
+    dp._refresh()
+    assert not dp._ok.isEnabled()
+
+
+def test_current_date_override(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    dp = MdDatePicker(
+        host,
+        initial_date=QDate(2026, 6, 15),
+        current_date=QDate(2026, 6, 3),
+    )
+    offset = first_column(2026, 6)
+    assert dp._cells[offset + 2]._today is True   # June 3 marked today
+    assert dp._cells[offset + 14]._today is False  # June 15 is selected, not today
+
+
+def test_custom_text(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    dp = MdDatePicker(
+        host,
+        confirm_text="Done",
+        cancel_text="Nope",
+        help_text="Pick a day",
+    )
+    assert dp._support.text() == "Pick a day"
+
+
+# -- inline calendar (MdCalendarDatePicker) -------------------------------
+
+
+def test_calendar_inline_emits_date_changed(qtbot):
+    host = QWidget()
+    qtbot.addWidget(host)
+    cal = MdCalendarDatePicker(host, initial_date=QDate(2026, 6, 15))
+    got = []
+    cal.dateChanged.connect(got.append)
+    offset = first_column(2026, 6)
+    assert cal._cells[offset + 14]._date == QDate(2026, 6, 15)
+    cal._on_day_clicked(QDate(2026, 6, 20))
+    assert got == [QDate(2026, 6, 20)]
+    assert cal.selected_date == QDate(2026, 6, 20)
+
+
+def test_calendar_inline_month_change_signal(qtbot):
+    host = QWidget()
+    qtbot.addWidget(host)
+    cal = MdCalendarDatePicker(host, initial_date=QDate(2026, 12, 10))
+    months = []
+    cal.displayedMonthChanged.connect(months.append)
+    cal._shift_month(1)
+    assert cal.displayed_month == QDate(2027, 1, 1)
+    assert months == [QDate(2027, 1, 1)]
+
+
+def test_calendar_inline_range_disables(qtbot):
+    host = QWidget()
+    qtbot.addWidget(host)
+    cal = MdCalendarDatePicker(
+        host,
+        initial_date=QDate(2026, 6, 15),
+        first_date=QDate(2026, 6, 10),
+        last_date=QDate(2026, 6, 20),
+    )
+    offset = first_column(2026, 6)
+    assert cal._cells[offset + 4]._enabled is False   # June 5
+    assert cal._cells[offset + 14]._enabled is True   # June 15
+
+
+def _press_event(widget):
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    return QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(1, 1),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )

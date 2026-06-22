@@ -1,12 +1,14 @@
 """Material 3 expansion panel for QtWidgets.
 
 An expandable panel (cf. Flutter's ``ExpansionTile``): a clickable header
-(``title-medium`` title + a trailing chevron that flips) over collapsible content
-that animates its height open/closed. ``toggled(bool)`` fires on expand/collapse.
+(``title-medium`` title, optional ``body-medium`` subtitle, optional leading and
+trailing widgets, plus a chevron that flips) over collapsible content that
+animates its height open/closed. ``toggled(bool)`` fires on expand/collapse.
 
 The content's expanded height is measured at expand time (after layout has given
 the panel a real width), so wrapped-text content is not clipped. Panels are
-independent — exclusive-accordion grouping is deferred.
+independent — exclusive-accordion grouping (Flutter's ``ExpansionPanelList`` with
+``ExpansionPanelRadio``) is deferred.
 """
 
 from __future__ import annotations
@@ -33,28 +35,75 @@ _MAX = 16777215  # QWIDGETSIZE_MAX
 class _Header(MaterialWidgetMixin, QWidget):
     clicked = Signal()
 
-    def __init__(self, title: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        title: str,
+        subtitle: str = "",
+        *,
+        leading: QWidget | None = None,
+        trailing: QWidget | None = None,
+        show_trailing_icon: bool = True,
+        surface_role: ColorRole = ColorRole.SURFACE,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__(parent)
         self._init_material(
             shape=ShapeScale.NONE, ripple=True, focus_ring=False,
-            surface_role=ColorRole.SURFACE,
+            surface_role=surface_role,
         )
-        self.setFixedHeight(_HEADER_H)
+        self.setMinimumHeight(_HEADER_H)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(_PAD, 0, _PAD, 0)
+        lay.setSpacing(_PAD)
+
+        # Optional leading widget (e.g. an avatar or icon).
+        self._leading = leading
+        if leading is not None:
+            lay.addWidget(leading, 0)
+
+        # Title (+ optional subtitle) stacked vertically.
+        text_col = QVBoxLayout()
+        text_col.setContentsMargins(0, 0, 0, 0)
+        text_col.setSpacing(2)
         self._title = QLabel(title)
         self._title.setFont(font_for_role(TypescaleRole.TITLE_MEDIUM))
+        text_col.addWidget(self._title)
+        self._subtitle = QLabel(subtitle)
+        self._subtitle.setFont(font_for_role(TypescaleRole.BODY_MEDIUM))
+        self._subtitle.setVisible(bool(subtitle))
+        text_col.addWidget(self._subtitle)
+        lay.addLayout(text_col, 1)
+
+        # Optional trailing widget, then the rotating chevron.
+        self._trailing = trailing
+        if trailing is not None:
+            lay.addWidget(trailing, 0)
         self._chevron = MdIcon("expand_more", color_role=ColorRole.ON_SURFACE_VARIANT)
         self._chevron.set_size(24)
-        lay.addWidget(self._title, 1)
+        self._chevron.setVisible(show_trailing_icon)
         lay.addWidget(self._chevron, 0)
+
         self._restyle()
         ThemeManager.instance().themeChanged.connect(self._restyle)
 
+    def set_surface_role(self, role: ColorRole) -> None:
+        self._surface_role = role
+        self.update()
+
     def _restyle(self) -> None:
-        c = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
-        self._title.setStyleSheet(f"color: {c};")
+        tm = ThemeManager.instance()
+        self._title.setStyleSheet(f"color: {tm.color(ColorRole.ON_SURFACE).name()};")
+        self._subtitle.setStyleSheet(
+            f"color: {tm.color(ColorRole.ON_SURFACE_VARIANT).name()};"
+        )
+
+    def set_title(self, title: str) -> None:
+        self._title.setText(title)
+
+    def set_subtitle(self, subtitle: str) -> None:
+        self._subtitle.setText(subtitle)
+        self._subtitle.setVisible(bool(subtitle))
 
     def set_expanded(self, expanded: bool) -> None:
         self._chevron.set_name("expand_less" if expanded else "expand_more")
@@ -68,19 +117,48 @@ class _Header(MaterialWidgetMixin, QWidget):
 
 
 class MdExpansionPanel(QWidget):
-    """An expandable header + collapsible content panel."""
+    """An expandable header + collapsible content panel.
+
+    Mirrors Flutter ``ExpansionTile``: ``title``/``subtitle`` text, optional
+    ``leading``/``trailing`` widgets, ``initially_expanded`` (Flutter's
+    ``initiallyExpanded``), a ``background_role`` theme color behind the header
+    (Flutter's ``backgroundColor``), and a ``toggled(bool)`` Signal in place of
+    ``onExpansionChanged``.
+    """
 
     toggled = Signal(bool)
 
-    def __init__(self, title: str = "", parent: QWidget | None = None,
-                 *, expanded: bool = False) -> None:
+    def __init__(
+        self,
+        title: str = "",
+        parent: QWidget | None = None,
+        *,
+        subtitle: str = "",
+        leading: QWidget | None = None,
+        trailing: QWidget | None = None,
+        show_trailing_icon: bool = True,
+        initially_expanded: bool = False,
+        background_role: ColorRole = ColorRole.SURFACE,
+        expanded: bool | None = None,
+    ) -> None:
         super().__init__(parent)
         self._expanded = False
+        self._background_role = background_role
+        # ``expanded`` kept as a back-compat alias for ``initially_expanded``.
+        if expanded is not None:
+            initially_expanded = expanded
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
-        self._header = _Header(title)
+        self._header = _Header(
+            title,
+            subtitle,
+            leading=leading,
+            trailing=trailing,
+            show_trailing_icon=show_trailing_icon,
+            surface_role=background_role,
+        )
         self._header.clicked.connect(self.toggle)
         lay.addWidget(self._header)
 
@@ -91,11 +169,33 @@ class MdExpansionPanel(QWidget):
         self._content.setMaximumHeight(0)
         lay.addWidget(self._content)
 
-        if expanded:
+        if initially_expanded:
             self.set_expanded(True, animated=False)
+
+    # -- content -----------------------------------------------------------
 
     def add_content(self, widget: QWidget) -> None:
         self._content_lay.addWidget(widget)
+
+    # -- header text / decorations -----------------------------------------
+
+    def set_title(self, title: str) -> None:
+        self._header.set_title(title)
+
+    def set_subtitle(self, subtitle: str) -> None:
+        self._header.set_subtitle(subtitle)
+
+    @property
+    def background_role(self) -> ColorRole:
+        return self._background_role
+
+    def set_background_role(self, role: ColorRole) -> None:
+        """Set the theme color role painted behind the header (cf.
+        Flutter ``backgroundColor``)."""
+        self._background_role = role
+        self._header.set_surface_role(role)
+
+    # -- expansion ---------------------------------------------------------
 
     @property
     def expanded(self) -> bool:

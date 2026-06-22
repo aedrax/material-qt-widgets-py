@@ -35,6 +35,35 @@ def test_variant_and_supporting_height(qtbot):
     assert MdField(variant=FieldVariant.OUTLINED).variant == FieldVariant.OUTLINED
 
 
+def test_leading_trailing_slots(qtbot):
+    f = MdField(label="x")
+    qtbot.addWidget(f)
+    f.set_content(QLineEdit())
+    assert f._leading is None and f._trailing is None
+    lead = QLineEdit()
+    f.set_leading(lead)
+    assert f._leading is lead
+    f.set_leading(None)
+    assert f._leading is None
+
+
+def test_counter_adds_support_row(qtbot):
+    plain = MdField(label="x")
+    counted = MdField(label="x")
+    counted.set_counter("3/10")
+    for f in (plain, counted):
+        qtbot.addWidget(f)
+    assert counted.sizeHint().height() > plain.sizeHint().height()
+
+
+def test_multiline_box_height(qtbot):
+    single = MdField(label="x")
+    tall = MdField(label="x", multiline_box_height=100)
+    for f in (single, tall):
+        qtbot.addWidget(f)
+    assert tall.sizeHint().height() > single.sizeHint().height()
+
+
 def test_renders(qtbot):
     for variant in FieldVariant:
         for err in (False, True):
@@ -42,5 +71,6 @@ def test_renders(qtbot):
                         supporting_text="Help", error=err)
             qtbot.addWidget(f)
             f.set_content(QLineEdit())
+            f.set_counter("5/10")
             f.resize(f.sizeHint())
             f.grab()

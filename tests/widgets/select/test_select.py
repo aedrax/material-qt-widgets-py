@@ -55,3 +55,80 @@ def test_renders(qtbot):
         s.set_value("A")
         s.resize(280, s.sizeHint().height())
         s.grab()
+
+
+def test_items_and_value_kwargs(qtbot):
+    s = MdFilledSelect(items=["A", ("Two", 2), "C"], value=2)
+    qtbot.addWidget(s)
+    assert s.value() == 2
+    assert s._display.text() == "Two"
+
+
+def test_set_options_replaces(qtbot):
+    s = MdFilledSelect()
+    qtbot.addWidget(s)
+    s.set_options(["A", "B"])
+    s.set_options(["C"])
+    assert len(s._options) == 1
+    assert s._options[0][0] == "C"
+
+
+def test_hint_text_sets_placeholder(qtbot):
+    s = MdFilledSelect(hint_text="Choose one")
+    qtbot.addWidget(s)
+    assert s._display.placeholderText() == "Choose one"
+
+
+def test_enabled_toggle(qtbot):
+    s = MdFilledSelect(enabled=False)
+    qtbot.addWidget(s)
+    assert s.is_enabled() is False
+    s.set_enabled(True)
+    assert s.is_enabled() is True
+
+
+def test_leading_icon_created(qtbot):
+    s = MdFilledSelect(leading_icon="search")
+    qtbot.addWidget(s)
+    assert s._leading is not None
+
+
+def test_enable_filter_makes_editable(qtbot):
+    s = MdFilledSelect(items=["Apple", "Banana", "Cherry"], enable_filter=True)
+    qtbot.addWidget(s)
+    assert s._display.isReadOnly() is False
+    s._on_text_edited("an")
+    assert s._menu is not None
+    texts = [it.text for it in s._menu._items]
+    assert texts == ["Banana"]
+    s._menu.close()
+
+
+def test_filter_menu_is_non_grabbing(qtbot):
+    # The filter popup must not grab the keyboard away from the editable field.
+    s = MdFilledSelect(items=["Apple", "Banana"], enable_filter=True)
+    qtbot.addWidget(s)
+    s._on_text_edited("a")
+    assert s._menu is not None
+    assert s._menu._grabs_focus is False
+
+
+def test_filter_reuses_single_menu(qtbot):
+    s = MdFilledSelect(items=["Apple", "Apricot", "Banana"], enable_filter=True)
+    qtbot.addWidget(s)
+    s._on_text_edited("A")
+    m1 = s._menu
+    s._on_text_edited("Ap")
+    assert s._menu is m1
+    assert [it.text for it in s._menu._items] == ["Apple", "Apricot"]
+    s._menu.close()
+
+
+def test_readonly_select_menu_grabs(qtbot):
+    # A non-filtering select uses the standard grabbing Qt.Popup menu.
+    s = MdFilledSelect(items=["Apple", "Banana"])
+    qtbot.addWidget(s)
+    s._open_menu()
+    assert s._menu is not None
+    assert s._menu._grabs_focus is True
+    s._menu.close()

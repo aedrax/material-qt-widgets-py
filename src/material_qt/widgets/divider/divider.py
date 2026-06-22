@@ -47,13 +47,20 @@ class MdDivider(QWidget):
         parent: QWidget | None = None,
         *,
         orientation: Qt.Orientation = Qt.Orientation.Horizontal,
+        thickness: int = THICKNESS_PX,
+        indent: int = 0,
+        end_indent: int = 0,
+        color_role: ColorRole = ColorRole.OUTLINE_VARIANT,
     ) -> None:
         super().__init__(parent)
         self._orientation = orientation
+        self._thickness = max(0, int(thickness))
+        self._indent = max(0, int(indent))
+        self._end_indent = max(0, int(end_indent))
         self._inset = False
         self._inset_start = False
         self._inset_end = False
-        self._color_role = ColorRole.OUTLINE_VARIANT
+        self._color_role = color_role
 
         # Decorative by default; not focusable, transparent to mouse events.
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -70,26 +77,89 @@ class MdDivider(QWidget):
             self.setSizePolicy(
                 QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
             )
-            self.setFixedHeight(THICKNESS_PX)
+            self.setFixedHeight(self._thickness)
         else:
             self.setSizePolicy(
                 QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding
             )
-            self.setFixedWidth(THICKNESS_PX)
+            self.setFixedWidth(self._thickness)
 
     def orientation(self) -> Qt.Orientation:
         return self._orientation
 
-    def set_orientation(self, orientation: Qt.Orientation) -> None:
-        if orientation == self._orientation:
-            return
-        # Release the previously fixed dimension before applying new policy.
+    def _reapply_size_policy(self) -> None:
+        """Release the current fixed extent, then re-apply the size policy.
+
+        ``_apply_size_policy`` bakes a fixed cross-axis dimension via
+        ``setFixed{Height,Width}``; that fixed extent must be released first or
+        switching orientation/thickness leaves a stale constraint.
+        """
         self.setMinimumSize(0, 0)
         self.setMaximumSize(_QWIDGETSIZE_MAX, _QWIDGETSIZE_MAX)
-        self._orientation = orientation
         self._apply_size_policy()
         self.updateGeometry()
         self.update()
+
+    def set_orientation(self, orientation: Qt.Orientation) -> None:
+        if orientation == self._orientation:
+            return
+        self._orientation = orientation
+        self._reapply_size_policy()
+
+    # -- thickness / color -------------------------------------------------
+
+    @property
+    def thickness(self) -> int:
+        """Line thickness in pixels (the divider's fixed cross-axis size)."""
+        return self._thickness
+
+    @thickness.setter
+    def thickness(self, value: int) -> None:
+        value = max(0, int(value))
+        if value == self._thickness:
+            return
+        self._thickness = value
+        self._reapply_size_policy()
+
+    @property
+    def color_role(self) -> ColorRole:
+        """Theme color role used to paint the line."""
+        return self._color_role
+
+    @color_role.setter
+    def color_role(self, role: ColorRole) -> None:
+        if role != self._color_role:
+            self._color_role = role
+            self.update()
+
+    def set_color_role(self, role: ColorRole) -> None:
+        self.color_role = role
+
+    # -- indent properties (numeric, Flutter-style) ------------------------
+
+    @property
+    def indent(self) -> int:
+        """Leading-edge inset in pixels (Flutter ``indent``)."""
+        return self._indent
+
+    @indent.setter
+    def indent(self, value: int) -> None:
+        value = max(0, int(value))
+        if value != self._indent:
+            self._indent = value
+            self.update()
+
+    @property
+    def end_indent(self) -> int:
+        """Trailing-edge inset in pixels (Flutter ``endIndent``)."""
+        return self._end_indent
+
+    @end_indent.setter
+    def end_indent(self, value: int) -> None:
+        value = max(0, int(value))
+        if value != self._end_indent:
+            self._end_indent = value
+            self.update()
 
     # -- inset properties --------------------------------------------------
 
@@ -140,25 +210,26 @@ class MdDivider(QWidget):
         widget's layout direction for the horizontal case.
         """
         rect = self.rect()
-        start = self._inset or self._inset_start
-        end = self._inset or self._inset_end
+        # Boolean insets contribute a fixed 16px; numeric indents stack on top.
+        start_inset = (INSET_PX if (self._inset or self._inset_start) else 0) + self._indent
+        end_inset = (INSET_PX if (self._inset or self._inset_end) else 0) + self._end_indent
 
         if self._orientation == Qt.Orientation.Horizontal:
-            left_inset = start
-            right_inset = end
+            left_inset = start_inset
+            right_inset = end_inset
             # Honor RTL: leading == right edge when layout is RTL.
             if self.layoutDirection() == Qt.LayoutDirection.RightToLeft:
                 left_inset, right_inset = right_inset, left_inset
-            x = rect.left() + (INSET_PX if left_inset else 0)
-            right = rect.right() - (INSET_PX if right_inset else 0)
+            x = rect.left() + left_inset
+            right = rect.right() - right_inset
             width = max(0, right - x + 1)
-            return QRect(x, rect.top(), width, THICKNESS_PX)
+            return QRect(x, rect.top(), width, self._thickness)
 
         # Vertical: insets apply to the top (leading) and bottom (trailing).
-        y = rect.top() + (INSET_PX if start else 0)
-        bottom = rect.bottom() - (INSET_PX if end else 0)
+        y = rect.top() + start_inset
+        bottom = rect.bottom() - end_inset
         height = max(0, bottom - y + 1)
-        return QRect(rect.left(), y, THICKNESS_PX, height)
+        return QRect(rect.left(), y, self._thickness, height)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         line = self._line_rect()

@@ -60,6 +60,27 @@ def test_auto_hides_after_show_ms(qtbot):
     assert tip.isHidden()
 
 
+def test_prefer_below_property(qtbot):
+    host, btn = _target(qtbot)
+    tip = MdTooltip(btn, "Help text", prefer_below=True, margin=8)
+    assert tip.prefer_below is True
+    assert tip.margin == 8
+    tip.set_prefer_below(False)
+    assert tip.prefer_below is False
+
+
+def test_prefer_below_positions_under_target(qtbot):
+    host, btn = _target(qtbot)
+    host.show()
+    qtbot.waitExposed(host)
+    below = MdTooltip(btn, "Help text", wait_ms=0, prefer_below=True)
+    below._show_tooltip()
+    above = MdTooltip(btn, "Help text", wait_ms=0, prefer_below=False)
+    above._show_tooltip()
+    # When preferring below, the tooltip sits lower than when preferring above.
+    assert below.y() > above.y()
+
+
 def test_renders(qtbot):
     host, btn = _target(qtbot)
     tip = MdTooltip(btn, "Help text", wait_ms=0)

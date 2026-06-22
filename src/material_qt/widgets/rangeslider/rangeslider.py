@@ -49,12 +49,17 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         high: int = 100,
         step: int = 0,
         labeled: bool = False,
+        divisions: int = 0,
     ) -> None:
         super().__init__(parent)
         self._labeled = labeled
         self._min = minimum
         self._max = maximum
         self._step = step
+        # ``divisions`` (Flutter semantics): N intervals → N+1 discrete stops,
+        # snap interval ``(max-min)/N``. When > 0 it takes precedence over
+        # ``step`` for snapping and shows tick marks.
+        self._divisions = max(0, int(divisions))
         self._low = minimum
         self._high = maximum
         self._active: str | None = None  # 'low' | 'high' while dragging
@@ -80,8 +85,34 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
     def _clamp(self, v: int) -> int:
         return int(max(self._min, min(self._max, v)))
 
+    @property
+    def divisions(self) -> int:
+        """Number of discrete intervals (N → N+1 stops); 0 = continuous."""
+        return self._divisions
+
+    def set_divisions(self, divisions: int) -> None:
+        """Set the number of discrete intervals and snap both handles.
+
+        Flutter semantics: ``divisions = N`` yields ``N + 1`` evenly spaced
+        stops. Setting this (> 0) shows tick marks and takes precedence over
+        ``step`` when snapping.
+        """
+        self._divisions = max(0, int(divisions))
+        self.set_values(self._low, self._high)
+        self.update()
+
+    def _snap(self, value: int) -> int:
+        """Snap ``value`` to the nearest division stop (clamped to bounds)."""
+        value = self._clamp(value)
+        span = self._max - self._min
+        if self._divisions > 0 and span > 0:
+            interval = span / self._divisions
+            idx = round((value - self._min) / interval)
+            value = self._clamp(int(round(self._min + idx * interval)))
+        return value
+
     def set_values(self, low: int, high: int) -> None:
-        low, high = self._clamp(low), self._clamp(high)
+        low, high = self._snap(low), self._snap(high)
         if low > high:
             low, high = high, low
         changed = (low, high) != (self._low, self._high)
@@ -114,6 +145,8 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
             return self._min
         f = max(0.0, min(1.0, (x - track.left()) / track.width()))
         raw = self._min + f * (self._max - self._min)
+        if self._divisions > 0:
+            return self._snap(int(round(raw)))
         if self._step > 0:
             raw = self._min + round((raw - self._min) / self._step) * self._step
         return self._clamp(int(round(raw)))
@@ -204,6 +237,18 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         )
         painter.setBrush(active)
         painter.drawRoundedRect(QRectF(lx, track.top(), hx - lx, _TRACK_H), r, r)
+
+        # Tick marks (discrete) when ``divisions`` is set. Ticks inside the
+        # active span use ``on-primary``; the rest use ``outline-variant``.
+        if self._divisions > 0:
+            for i in range(self._divisions + 1):
+                tx = track.left() + track.width() * (i / self._divisions)
+                on_active = lx <= tx <= hx
+                tick = theme.color(
+                    ColorRole.ON_PRIMARY if on_active else ColorRole.OUTLINE_VARIANT
+                )
+                painter.setBrush(tick)
+                painter.drawEllipse(QPointF(tx, cy), 1.0, 1.0)
 
         # Handle state layers (hover/press) + handles.
         for which, x in (("low", lx), ("high", hx)):

@@ -98,7 +98,14 @@ def weighted_geometry(
 class _Tile(MaterialWidgetMixin, QWidget):
     """A default carousel tile: a ``primary-container`` rounded panel + label."""
 
-    def __init__(self, label: str, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        label: str,
+        parent: QWidget | None = None,
+        *,
+        width: int = _ITEM_W,
+        height: int = _ITEM_H,
+    ) -> None:
         super().__init__(parent)
         self._init_material(
             shape=ShapeScale.EXTRA_LARGE,
@@ -107,7 +114,7 @@ class _Tile(MaterialWidgetMixin, QWidget):
             surface_role=ColorRole.PRIMARY_CONTAINER,
             ripple_role=ColorRole.ON_PRIMARY_CONTAINER,
         )
-        self.setFixedSize(_ITEM_W, _ITEM_H)
+        self.setFixedSize(width, height)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(12, 12, 12, 12)
         self._label = QLabel(label)
@@ -171,15 +178,46 @@ class _FlexTile(MaterialWidgetMixin, QWidget):
 
 
 class MdCarousel(QWidget):
-    """A horizontally scrollable, snapping carousel of items."""
+    """A horizontally scrollable, snapping carousel of items.
+
+    Mirrors Flutter ``CarouselView`` (uncontained layout). Constructor kwargs map
+    to Flutter properties:
+
+    * ``item_extent`` (Flutter ``itemExtent``) — the width of the default tiles
+      and the snap stride;
+    * ``item_height`` — tile height (Flutter derives this from the cross axis);
+    * ``item_snapping`` (Flutter ``itemSnapping``) — settle on an item edge on
+      release. Defaults to ``True`` here (Flutter defaults ``False``) because
+      snapping is the carousel's defining affordance in this port;
+    * ``padding`` (Flutter ``padding``) — space surrounding the strip of items;
+    * ``scroll_direction`` (Flutter ``scrollDirection``) — horizontal only;
+      vertical is N/A for this implementation.
+
+    ``indexChanged(int)`` replaces Flutter's ``onIndexChanged``.
+    """
 
     indexChanged = Signal(int)  # noqa: N815  (Qt-style signal name)
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        item_extent: int = _ITEM_W,
+        item_height: int = _ITEM_H,
+        item_snapping: bool = True,
+        padding: int = 0,
+        scroll_direction: Qt.Orientation = Qt.Orientation.Horizontal,
+    ) -> None:
         super().__init__(parent)
+        if scroll_direction is not Qt.Orientation.Horizontal:
+            raise ValueError("MdCarousel supports horizontal scrolling only")
         self._items: list[QWidget] = []
         self._positions: list[float] = []
         self._index = 0
+        self._item_extent = int(item_extent)
+        self._item_height = int(item_height)
+        self._item_snapping = bool(item_snapping)
+        self._padding = int(padding)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -192,11 +230,11 @@ class MdCarousel(QWidget):
 
         self._strip = QWidget()
         self._row = QHBoxLayout(self._strip)
-        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setContentsMargins(padding, padding, padding, padding)
         self._row.setSpacing(_GAP)
         self._row.addStretch(1)
         self._scroll.setWidget(self._strip)
-        self.setFixedHeight(_ITEM_H + 16)
+        self.setFixedHeight(self._item_height + 16 + 2 * padding)
         outer.addWidget(self._scroll)
 
         # Kinetic drag-to-scroll over the items (a click still activates a tile).
@@ -216,12 +254,24 @@ class MdCarousel(QWidget):
         self._update_snap()
 
     def add_tile(self, label: str) -> _Tile:
-        tile = _Tile(label)
+        tile = _Tile(label, width=self._item_extent, height=self._item_height)
         self.add_item(tile)
         return tile
 
     def count(self) -> int:
         return len(self._items)
+
+    @property
+    def item_extent(self) -> int:
+        return self._item_extent
+
+    @property
+    def item_snapping(self) -> bool:
+        return self._item_snapping
+
+    def set_item_snapping(self, enabled: bool) -> None:
+        self._item_snapping = bool(enabled)
+        self._update_snap()
 
     @property
     def current_index(self) -> int:
@@ -241,12 +291,16 @@ class MdCarousel(QWidget):
         """Recompute item leading-edge positions (content coords) and register
         them as snap points."""
         positions: list[float] = []
-        x = 0.0
+        # The strip's left content margin shifts every item right by ``padding``,
+        # so item leading edges (and snap/index positions) start there too.
+        x = float(self._padding)
         for item in self._items:
             positions.append(x)
             x += self._item_width(item) + _GAP
         self._positions = positions
-        self._scroller.setSnapPositionsX(positions)
+        # When snapping is disabled, register no snap points so a drag scrolls
+        # freely; positions are still tracked for indexChanged/_scroll_to_index.
+        self._scroller.setSnapPositionsX(positions if self._item_snapping else [])
 
     def _nearest_index(self, value: float) -> int:
         if not self._positions:
@@ -263,6 +317,8 @@ class MdCarousel(QWidget):
             self.indexChanged.emit(idx)
 
     def _scroll_to_index(self, index: int) -> None:
+        if not self._positions:
+            return
         bar = self._scroll.horizontalScrollBar()
         index = max(0, min(index, len(self._positions) - 1))
         target = int(max(bar.minimum(), min(bar.maximum(), self._positions[index])))

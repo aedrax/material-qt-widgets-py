@@ -274,3 +274,37 @@ def test_renders_24h(qtbot):
     tp = MdTimePicker(host, initial_time=QTime(20, 30), hour24=True)
     tp.open()
     tp.grab()
+
+
+def test_help_text_overrides_support_label(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host, help_text="Set alarm time")
+    assert tp._support.text() == "Set alarm time"
+    # In input mode the same help text is shown (not the default "Enter time").
+    tp._toggle_entry()
+    assert tp._support.text() == "Set alarm time"
+
+
+def test_default_support_label_per_mode(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    tp = MdTimePicker(host)  # no help_text
+    assert tp._support.text() == "Select time"
+    tp._toggle_entry()
+    assert tp._support.text() == "Enter time"
+
+
+def test_custom_button_text(qtbot):
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    # Smoke: custom confirm/cancel text doesn't break construction or accept.
+    tp = MdTimePicker(host, initial_time=QTime(9, 15),
+                      confirm_text="Set", cancel_text="Dismiss")
+    got = []
+    tp.accepted.connect(got.append)
+    tp._on_ok()
+    assert got == [QTime(9, 15)]

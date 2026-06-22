@@ -27,6 +27,56 @@ def test_group_exclusivity(qtbot):
     assert b.isChecked() and not a.isChecked()
 
 
+def test_toggleable_deselects_on_click(qtbot):
+    r = MdRadio(checked=True, toggleable=True)
+    qtbot.addWidget(r)
+    assert r.toggleable is True
+    assert r.isChecked() is True
+    # Clicking an already-selected toggleable radio deselects it.
+    r.click()
+    assert r.isChecked() is False
+    # Clicking again selects it back.
+    r.click()
+    assert r.isChecked() is True
+
+
+def test_toggleable_in_button_group(qtbot):
+    from PySide6.QtWidgets import QButtonGroup, QVBoxLayout, QWidget
+
+    parent = QWidget()
+    qtbot.addWidget(parent)
+    lay = QVBoxLayout(parent)
+    group = QButtonGroup(parent)
+    a, b = MdRadio(toggleable=True), MdRadio(toggleable=True)
+    for r in (a, b):
+        lay.addWidget(r)
+        group.addButton(r)
+    a.click()
+    assert a.isChecked() and not b.isChecked()
+    # Re-clicking selected A deselects it; the group ends with nothing checked.
+    a.click()
+    assert not a.isChecked() and not b.isChecked()
+    # Selecting B still works after the group's exclusivity was toggled off/on.
+    b.click()
+    assert b.isChecked() and not a.isChecked()
+
+
+def test_non_toggleable_stays_selected_on_click(qtbot):
+    r = MdRadio(checked=True)
+    qtbot.addWidget(r)
+    r.click()
+    # Default (non-toggleable, autoExclusive): re-clicking does not deselect.
+    assert r.isChecked() is True
+
+
+def test_label_sets_accessible_name(qtbot):
+    r = MdRadio(label="Option A")
+    qtbot.addWidget(r)
+    assert r.label == "Option A"
+    r.set_label("Option B")
+    assert r.accessibleName() == "Option B"
+
+
 def test_size_is_state_layer(qtbot):
     r = MdRadio()
     qtbot.addWidget(r)

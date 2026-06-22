@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QWidget
 
 from material_qt.theme.theme_manager import ThemeManager, ThemeMode
@@ -100,6 +101,65 @@ def test_paint_does_not_crash(qtbot):
     badge.set_value("")
     badge.resize(badge.sizeHint())
     badge.grab()
+
+
+def test_label_visible_hides_on_host(qtbot):
+    host = QWidget()
+    host.resize(48, 48)
+    qtbot.addWidget(host)
+    host.show()
+    qtbot.waitExposed(host)
+    badge = MdBadge("9")
+    badge.attach(host)
+    assert not badge.isHidden()
+    badge.set_label_visible(False)
+    assert badge.isHidden()
+    assert badge.is_label_visible is False
+    badge.set_label_visible(True)
+    assert not badge.isHidden()
+
+
+def test_alignment_bottom_left(qtbot):
+    host = QWidget()
+    host.resize(60, 60)
+    qtbot.addWidget(host)
+    badge = MdBadge("3", alignment=Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignLeft)
+    badge.attach(host)
+    assert badge.x() == 0
+    assert badge.y() + badge.height() == host.height()
+
+
+def test_offset_shifts_position(qtbot):
+    host = QWidget()
+    host.resize(60, 60)
+    qtbot.addWidget(host)
+    a = MdBadge("3")
+    a.attach(host)
+    base_x = a.x()
+    b = MdBadge("3", offset=QPoint(-5, 4))
+    b.attach(host)
+    assert b.x() == base_x - 5
+    assert b.y() == 4
+
+
+def test_negative_offset_not_clamped(qtbot):
+    # A top-anchored badge with a negative y offset overhangs the corner; the
+    # offset must not be clamped away to 0 (Flutter offset semantics).
+    host = QWidget()
+    host.resize(60, 60)
+    qtbot.addWidget(host)
+    badge = MdBadge("3", offset=QPoint(0, -4))
+    badge.attach(host)
+    assert badge.y() == -4
+
+
+def test_background_and_text_roles(qtbot):
+    badge = MdBadge("1", background_role=ColorRole.PRIMARY, text_role=ColorRole.ON_PRIMARY)
+    qtbot.addWidget(badge)
+    assert badge.background_role == ColorRole.PRIMARY
+    assert badge.text_role == ColorRole.ON_PRIMARY
+    badge.set_background_role(ColorRole.TERTIARY)
+    assert badge.background_role == ColorRole.TERTIARY
 
 
 def test_rethemes_on_theme_change(qtbot):

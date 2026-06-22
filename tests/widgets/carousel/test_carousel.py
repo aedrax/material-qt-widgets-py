@@ -56,6 +56,45 @@ def test_renders(qtbot):
     c.grab()
 
 
+def test_item_extent_sets_tile_width_and_snap_stride(qtbot):
+    c = MdCarousel(item_extent=200)
+    qtbot.addWidget(c)
+    assert c.item_extent == 200
+    for n in ["a", "b", "c"]:
+        c.add_tile(n)
+    # 200px tiles + 8px gap -> 0, 208, 416.
+    assert c._positions == [0.0, 208.0, 416.0]
+
+
+def test_padding_offsets_snap_positions(qtbot):
+    c = MdCarousel(padding=24)
+    qtbot.addWidget(c)
+    for n in ["a", "b", "c"]:
+        c.add_tile(n)
+    # Tiles start at the left padding, so leading edges are 24, 182, 340.
+    assert c._positions == [24.0, 182.0, 340.0]
+
+
+def test_item_snapping_toggle_clears_snap_points(qtbot):
+    c = MdCarousel(item_snapping=False)
+    qtbot.addWidget(c)
+    assert c.item_snapping is False
+    for n in ["a", "b"]:
+        c.add_tile(n)
+    # Positions still tracked even when snapping is off.
+    assert c._positions == [0.0, 158.0]
+    c.set_item_snapping(True)
+    assert c.item_snapping is True
+
+
+def test_vertical_scroll_direction_rejected(qtbot):
+    import pytest
+    from PySide6.QtCore import Qt
+
+    with pytest.raises(ValueError):
+        MdCarousel(scroll_direction=Qt.Orientation.Vertical)
+
+
 # -- weighted carousel ----------------------------------------------------
 
 def test_weighted_geometry_snapped_fills_slots():

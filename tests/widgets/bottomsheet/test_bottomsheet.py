@@ -73,6 +73,40 @@ def test_renders(qtbot):
         mod.MOTION_ENABLED = prev
 
 
+def test_not_dismissible_ignores_scrim(qtbot):
+    prev = mod.MOTION_ENABLED
+    mod.MOTION_ENABLED = False
+    try:
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+
+        host = _host(qtbot)
+        sheet = MdBottomSheet(host, is_dismissible=False)
+        seen = []
+        sheet.closed.connect(lambda: seen.append(True))
+        sheet.open()
+        # Click the scrim well above the panel (panel rests at the bottom).
+        press = QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(2, 2), Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+        )
+        sheet.mousePressEvent(press)
+        assert seen == [] and not sheet.isHidden()
+    finally:
+        mod.MOTION_ENABLED = prev
+
+
+def test_hide_drag_handle_shrinks_top_margin(qtbot):
+    host_on = _host(qtbot)
+    with_handle = MdBottomSheet(host_on, show_drag_handle=True)
+    host_off = _host(qtbot)
+    without = MdBottomSheet(host_off, show_drag_handle=False)
+    assert with_handle.show_drag_handle and not without.show_drag_handle
+    assert without._panel._show_handle is False
+    # Handle-off reserves less top space than handle-on.
+    assert without._content.contentsMargins().top() < with_handle._content.contentsMargins().top()
+
+
 # -- standard (persistent) bottom sheet -----------------------------------
 
 def test_standard_toggle_height(qtbot):

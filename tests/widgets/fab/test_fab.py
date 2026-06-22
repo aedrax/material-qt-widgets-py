@@ -52,3 +52,14 @@ def test_renders(qtbot):
         qtbot.addWidget(f)
         f.resize(f.sizeHint())
         f.grab()
+
+
+def test_tooltip_and_long_press(qtbot):
+    f = MdFab("add", tooltip="Add item")
+    qtbot.addWidget(f)
+    assert f.toolTip() == "Add item"
+    assert hasattr(f, "longPressed")
+    fired = []
+    f.longPressed.connect(lambda: fired.append(1))
+    f._emit_long_press()
+    assert fired == [1]

@@ -47,3 +47,30 @@ def test_renders(qtbot):
     lst.add_item(MdListItem("Sent"), divider=True)
     lst.resize(400, 160)
     lst.grab()
+
+
+def test_selected_property(qtbot):
+    it = MdListItem("Row", selected=True)
+    qtbot.addWidget(it)
+    assert it.selected is True
+    it.set_selected(False)
+    assert it.selected is False
+    it.selected = True
+    assert it.selected is True
+    it.grab()  # selected paint path
+
+
+def test_enabled_property_suppresses_click(qtbot):
+    it = MdListItem("Row", enabled=False)
+    qtbot.addWidget(it)
+    assert it.enabled is False
+    assert it.isEnabled() is False
+    it.set_enabled(True)
+    assert it.isEnabled() is True
+
+
+def test_content_padding(qtbot):
+    it = MdListItem("Row")
+    qtbot.addWidget(it)
+    it.set_content_padding(4, 2, 4, 2)
+    assert it.content_padding() == (4, 2, 4, 2)

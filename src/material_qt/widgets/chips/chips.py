@@ -1,28 +1,49 @@
 """Material 3 chips for QtWidgets.
 
-Ports Material Web's ``chips/`` — assist, suggestion, filter and input chips plus
-a chip set container. All chips are 32px tall, corner-small (8px), with a
-``label-large`` label, an optional leading Material Symbols icon, ripple and
-focus ring. Filter chips are selectable (secondary-container fill + leading
-checkmark when selected); input chips carry a trailing remove icon and emit
-``removed``.
+Ports Material Web's ``chips/`` — assist, suggestion, choice, filter and input
+chips plus a chip set container. All chips are 32px tall, corner-small (8px),
+with a ``label-large`` label, an optional leading Material Symbols icon or
+avatar image, ripple and focus ring. Filter and choice chips are selectable
+(secondary-container fill when selected); filter chips also show a leading
+checkmark. Input chips (and optionally filter chips) carry a trailing remove
+icon and emit ``removed``. An ``elevated`` form drops the outline for a
+surface-container-low fill plus a level-1 shadow.
+
+Idiomatic QObject surface (mirrors ``QAbstractButton``):
+
+* ``clicked`` — emitted on tap (Flutter ``onPressed``).
+* ``toggled(bool)`` — selection changes (Flutter ``onSelected``).
+* ``removed`` — the trailing delete affordance was activated (``onDeleted``).
+* ``set_label`` / ``label`` — the chip text (Flutter ``label``).
+* ``set_label_style`` — the label ``QFont`` (Flutter ``labelStyle``).
+* ``set_selected`` / ``selected`` — selection state (Flutter ``selected``).
+* ``set_leading_icon`` / ``set_avatar`` / ``set_trailing_icon`` — leading glyph,
+  leading image, trailing glyph.
+* ``set_background_color`` / ``set_selected_color`` — container theme
+  :class:`ColorRole` overrides (Flutter ``backgroundColor`` / ``selectedColor``).
+* ``set_checkmark_color`` / ``set_show_checkmark`` — filter/choice check styling.
+* ``setEnabled`` / ``setToolTip`` — Flutter ``isEnabled`` / ``tooltip``.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QFontMetrics, QPainter, QPen
+from PySide6.QtGui import QFont, QFontMetrics, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractButton, QHBoxLayout, QSizePolicy, QWidget
 
+from ...core.elevation import apply_elevation
 from ...core.material_widget import MaterialWidgetMixin
+from ...core.shape_util import rounded_path
 from ...tokens.color import ColorRole
-from ...tokens.shape import ShapeScale
+from ...tokens.elevation import ElevationLevel
+from ...tokens.shape import CornerRadii, ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..icon.icon import material_symbols_font
 
 _HEIGHT = 32
 _ICON = 18
+_AVATAR = 24
 _GAP = 8
 _PAD = 16
 _PAD_ICON = 8
@@ -43,12 +64,21 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         *,
         leading_icon: str = "",
         trailing_icon: str = "",
+        avatar: QPixmap | None = None,
         selectable: bool = False,
+        elevated: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setText(text)
         self._leading_icon = leading_icon
         self._trailing_icon = trailing_icon
+        self._avatar: QPixmap | None = avatar
+        self._elevated = elevated
+        # Theme-role color overrides (None -> use the variant default).
+        self._background_role: ColorRole | None = None
+        self._selected_role: ColorRole | None = None
+        self._checkmark_role: ColorRole | None = None
+        self._show_checkmark = True
         self.setCheckable(selectable)
         self._init_material(
             shape=ShapeScale.SMALL,
@@ -60,6 +90,9 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.toggled.connect(self._on_toggled)
+        if self._elevated:
+            ThemeManager.instance().themeChanged.connect(self._apply_elevation)
+            self._apply_elevation()
 
     def _on_toggled(self, *_) -> None:
         # Selection can change the leading content (e.g. a filter chip's
@@ -69,16 +102,103 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         self.adjustSize()
         self.update()
 
-    # -- selection-dependent colors (overridden by FilterChip) -------------
+    def _apply_elevation(self) -> None:
+        level = ElevationLevel.LEVEL1 if self.isEnabled() else ElevationLevel.LEVEL0
+        apply_elevation(self, level)
+
+    # -- idiomatic property surface ---------------------------------------
+
+    @property
+    def label(self) -> str:
+        """The chip text (Flutter ``label``)."""
+        return self.text()
+
+    def set_label(self, text: str) -> None:
+        """Set the chip text."""
+        self.setText(text)
+        self.updateGeometry()
+        self.adjustSize()
+        self.update()
+
+    def set_label_style(self, font: QFont) -> None:
+        """Set the label ``QFont`` (Flutter ``labelStyle``)."""
+        self.setFont(font)
+        self.updateGeometry()
+        self.adjustSize()
+        self.update()
+
+    @property
+    def selected(self) -> bool:
+        """Selection state (Flutter ``selected``); only meaningful when selectable."""
+        return self.isChecked()
+
+    def set_selected(self, value: bool) -> None:
+        """Set the selection state."""
+        self.setChecked(bool(value))
+
+    def set_leading_icon(self, name: str) -> None:
+        """Set the leading Material Symbols glyph name (empty clears it)."""
+        self._leading_icon = name
+        self.updateGeometry()
+        self.adjustSize()
+        self.update()
+
+    def set_avatar(self, pixmap: QPixmap | None) -> None:
+        """Set the leading avatar image (Flutter ``avatar``); ``None`` clears it."""
+        self._avatar = pixmap
+        self.updateGeometry()
+        self.adjustSize()
+        self.update()
+
+    @property
+    def avatar(self) -> QPixmap | None:
+        """The leading avatar image, if any."""
+        return self._avatar
+
+    def set_trailing_icon(self, name: str) -> None:
+        """Set the trailing Material Symbols glyph name (empty clears it)."""
+        self._trailing_icon = name
+        self.updateGeometry()
+        self.adjustSize()
+        self.update()
+
+    def set_background_color(self, role: ColorRole | None) -> None:
+        """Override the unselected container :class:`ColorRole` (Flutter ``backgroundColor``)."""
+        self._background_role = role
+        self.update()
+
+    def set_selected_color(self, role: ColorRole | None) -> None:
+        """Override the selected container :class:`ColorRole` (Flutter ``selectedColor``)."""
+        self._selected_role = role
+        self.update()
+
+    def set_checkmark_color(self, role: ColorRole | None) -> None:
+        """Override the leading checkmark :class:`ColorRole` (Flutter ``checkmarkColor``)."""
+        self._checkmark_role = role
+        self.update()
+
+    def set_show_checkmark(self, value: bool) -> None:
+        """Whether selected filter/choice chips show a leading checkmark (Flutter ``showCheckmark``)."""
+        self._show_checkmark = bool(value)
+        self.updateGeometry()
+        self.adjustSize()
+        self.update()
+
+    # -- selection-dependent colors (overridden by subclasses) -------------
 
     def _container_role(self) -> ColorRole | None:
-        return None  # transparent (outlined)
+        if self._background_role is not None:
+            return self._background_role
+        # Elevated chips have a filled body (no outline); flat chips are
+        # transparent and rely on the outline.
+        return ColorRole.SURFACE_CONTAINER_LOW if self._elevated else None
 
     def _label_role(self) -> ColorRole:
         return ColorRole.ON_SURFACE
 
     def _outline_visible(self) -> bool:
-        return self._container_role() is None
+        # The outline shows only on a flat, unfilled chip.
+        return not self._elevated and self._container_role() is None
 
     def _show_leading_check(self) -> bool:
         return False
@@ -86,7 +206,16 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
     # -- sizing ------------------------------------------------------------
 
     def _has_leading(self) -> bool:
-        return bool(self._leading_icon) or self._show_leading_check()
+        return (
+            bool(self._leading_icon)
+            or self._avatar is not None
+            or self._show_leading_check()
+        )
+
+    def _leading_size(self) -> int:
+        if self._show_leading_check():
+            return _ICON
+        return _AVATAR if self._avatar is not None else _ICON
 
     def sizeHint(self) -> QSize:  # noqa: N802
         metrics = QFontMetrics(self.font())
@@ -95,7 +224,7 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         right = _PAD_ICON if self._trailing_icon else _PAD
         total = left + w + right
         if self._has_leading():
-            total += _ICON + _GAP
+            total += self._leading_size() + _GAP
         if self._trailing_icon:
             total += _ICON + _GAP
         return QSize(total, _HEIGHT)
@@ -106,7 +235,7 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
     # -- interaction -------------------------------------------------------
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        # Trailing remove icon hit-test (input chips).
+        # Trailing remove icon hit-test (input chips / deletable filter chips).
         if self._trailing_icon and self.rect().contains(event.position().toPoint()):
             x = self.width() - _PAD_ICON - _ICON
             if event.position().x() >= x:
@@ -124,8 +253,11 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         self.update()
 
     def changeEvent(self, event) -> None:  # noqa: N802
-        if event.type() == QEvent.Type.EnabledChange and self.ripple is not None:
-            self.ripple.set_enabled(self.isEnabled())
+        if event.type() == QEvent.Type.EnabledChange:
+            if self.ripple is not None:
+                self.ripple.set_enabled(self.isEnabled())
+            if self._elevated:
+                self._apply_elevation()
         super().changeEvent(event)
         self.update()
 
@@ -139,6 +271,17 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         painter.setPen(color)
         painter.drawText(QRectF(x, 0, _ICON, self.height()),
                          Qt.AlignmentFlag.AlignCenter, name)
+
+    def _draw_avatar(self, painter, x) -> None:
+        pm = self._avatar
+        if pm is None or pm.isNull():
+            return
+        y = (self.height() - _AVATAR) / 2.0
+        target = QRectF(x, y, _AVATAR, _AVATAR)
+        painter.save()
+        painter.setClipPath(rounded_path(target, CornerRadii.uniform(_AVATAR / 2.0)))
+        painter.drawPixmap(target, pm, QRectF(pm.rect()))
+        painter.restore()
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
@@ -165,8 +308,6 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             inset = _OUTLINE_WIDTH / 2.0
-            from ...core.shape_util import rounded_path
-
             painter.drawPath(
                 rounded_path(QRectF(self.rect()).adjusted(inset, inset, -inset, -inset),
                              self._radii)
@@ -179,8 +320,14 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
 
         x = _PAD_ICON if self._has_leading() else _PAD
         if self._show_leading_check():
-            self._glyph(painter, "check", x, label_color)
+            check_color = label_color
+            if enabled and self._checkmark_role is not None:
+                check_color = theme.color(self._checkmark_role)
+            self._glyph(painter, "check", x, check_color)
             x += _ICON + _GAP
+        elif self._avatar is not None:
+            self._draw_avatar(painter, x)
+            x += _AVATAR + _GAP
         elif self._leading_icon:
             self._glyph(painter, self._leading_icon, x, label_color)
             x += _ICON + _GAP
@@ -198,23 +345,39 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
 
 
 class MdAssistChip(MdChip):
-    def __init__(self, text="", parent=None, *, icon="") -> None:
-        super().__init__(text, parent, leading_icon=icon)
+    """Action chip — performs an action (Flutter ``ActionChip``)."""
+
+    def __init__(self, text="", parent=None, *, icon="", avatar=None, elevated=False) -> None:
+        super().__init__(text, parent, leading_icon=icon, avatar=avatar, elevated=elevated)
 
 
 class MdSuggestionChip(MdChip):
+    """Suggestion chip — a dynamically generated action (Flutter ``ActionChip``)."""
+
+    def __init__(self, text="", parent=None, *, icon="", avatar=None, elevated=False) -> None:
+        super().__init__(text, parent, leading_icon=icon, avatar=avatar, elevated=elevated)
+
     def _label_role(self) -> ColorRole:
         return ColorRole.ON_SURFACE_VARIANT
 
 
-class MdFilterChip(MdChip):
-    def __init__(self, text="", parent=None, *, selected=False) -> None:
-        super().__init__(text, parent, selectable=True)
+class _SelectableChip(MdChip):
+    """Shared base for chips that toggle a secondary-container fill on selection."""
+
+    def __init__(self, text="", parent=None, *, icon="", avatar=None,
+                 selected=False, elevated=False, **kwargs) -> None:
+        super().__init__(text, parent, leading_icon=icon, avatar=avatar,
+                         selectable=True, elevated=elevated, **kwargs)
         if selected:
             self.setChecked(True)
 
     def _container_role(self) -> ColorRole | None:
-        return ColorRole.SECONDARY_CONTAINER if self.isChecked() else None
+        if self.isChecked():
+            return self._selected_role or ColorRole.SECONDARY_CONTAINER
+        if self._background_role is not None:
+            return self._background_role
+        # An elevated chip keeps a filled body even when unselected.
+        return ColorRole.SURFACE_CONTAINER_LOW if self._elevated else None
 
     def _label_role(self) -> ColorRole:
         return (
@@ -223,13 +386,42 @@ class MdFilterChip(MdChip):
             else ColorRole.ON_SURFACE_VARIANT
         )
 
+    def _outline_visible(self) -> bool:
+        # The outline shows only on a flat, unfilled, unselected chip.
+        return not self._elevated and not self.isChecked() and self._container_role() is None
+
+
+class MdChoiceChip(_SelectableChip):
+    """Choice chip — single-select within a set (Flutter ``ChoiceChip``).
+
+    Unlike a filter chip, a choice chip shows **no** leading checkmark when
+    selected — selection is conveyed by the container fill alone. Group several
+    in a ``QButtonGroup`` (exclusive) for single-select behaviour.
+    """
+
+
+class MdFilterChip(_SelectableChip):
+    """Filter chip — toggles a filter and shows a leading checkmark when selected
+    (Flutter ``FilterChip``). Pass ``deletable=True`` for a trailing remove
+    affordance that emits ``removed`` (Flutter ``onDeleted``)."""
+
+    def __init__(self, text="", parent=None, *, icon="", avatar=None,
+                 selected=False, deletable=False, elevated=False) -> None:
+        super().__init__(text, parent, icon=icon, avatar=avatar,
+                         selected=selected, elevated=elevated,
+                         trailing_icon="close" if deletable else "")
+
     def _show_leading_check(self) -> bool:
-        return self.isChecked()
+        return self.isChecked() and self._show_checkmark
 
 
 class MdInputChip(MdChip):
-    def __init__(self, text="", parent=None, *, icon="") -> None:
-        super().__init__(text, parent, leading_icon=icon, trailing_icon="close")
+    """Input chip — represents a discrete piece of input; deletable (Flutter
+    ``InputChip``). Emits ``removed`` when the trailing icon is activated."""
+
+    def __init__(self, text="", parent=None, *, icon="", avatar=None) -> None:
+        super().__init__(text, parent, leading_icon=icon, avatar=avatar,
+                         trailing_icon="close")
 
 
 class MdChipSet(QWidget):
@@ -244,7 +436,9 @@ class MdChipSet(QWidget):
 
     def add_chip(self, chip: MdChip) -> None:
         self._lay.insertWidget(self._lay.count() - 1, chip)
-        if isinstance(chip, MdInputChip):
+        # Any chip that exposes a delete affordance is removed from the set on
+        # ``removed`` (input chips, and filter chips created with deletable=True).
+        if chip._trailing_icon:
             chip.removed.connect(lambda: self.remove_chip(chip))
 
     def remove_chip(self, chip: MdChip) -> None:
@@ -257,6 +451,7 @@ __all__ = [
     "MdAssistChip",
     "MdChip",
     "MdChipSet",
+    "MdChoiceChip",
     "MdFilterChip",
     "MdInputChip",
     "MdSuggestionChip",

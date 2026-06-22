@@ -198,6 +198,8 @@ class MdNavigationRail(MaterialWidgetMixin, QWidget):
         extended: bool = False,
         label_type: str = "all",
         group_alignment: str = "top",
+        leading_at_top: bool = True,
+        trailing_at_bottom: bool = False,
     ) -> None:
         super().__init__(parent)
         self._dests: list[_RailDestination] = []
@@ -206,6 +208,8 @@ class MdNavigationRail(MaterialWidgetMixin, QWidget):
         self._extended = extended
         self._label_type = label_type
         self._group = group_alignment
+        self._leading_at_top = leading_at_top
+        self._trailing_at_bottom = trailing_at_bottom
         self._buttons = QButtonGroup(self)
         self._buttons.setExclusive(True)
 
@@ -229,13 +233,34 @@ class MdNavigationRail(MaterialWidgetMixin, QWidget):
 
     # -- slots / destinations ---------------------------------------------
 
-    def set_leading(self, widget: QWidget) -> None:
+    def set_leading(self, widget: QWidget, *, at_top: bool | None = None) -> None:
         self._leading = widget
+        if at_top is not None:
+            self._leading_at_top = at_top
         self._relayout()
 
-    def set_trailing(self, widget: QWidget) -> None:
+    def set_trailing(self, widget: QWidget, *, at_bottom: bool | None = None) -> None:
         self._trailing = widget
+        if at_bottom is not None:
+            self._trailing_at_bottom = at_bottom
         self._relayout()
+
+    # -- selection (Flutter ``selectedIndex`` / ``onDestinationSelected``) ---
+
+    @property
+    def selected_index(self) -> int:
+        """Index of the active destination, or ``-1`` if none."""
+        return self._buttons.checkedId()
+
+    @selected_index.setter
+    def selected_index(self, index: int) -> None:
+        self.set_selected_index(index)
+
+    def set_selected_index(self, index: int) -> None:
+        """Programmatically select the destination at ``index``."""
+        button = self._buttons.button(index)
+        if button is not None:
+            button.setChecked(True)
 
     def add_destination(self, label: str, *, icon: str = "",
                         active_icon: str = "") -> _RailDestination:
@@ -282,20 +307,40 @@ class MdNavigationRail(MaterialWidgetMixin, QWidget):
         self._group = alignment
         self._relayout()
 
+    def set_leading_at_top(self, at_top: bool) -> None:
+        """``True`` pins the leading widget to the rail's top; ``False`` keeps it
+        adjacent to the destination group (Flutter ``leadingAtTop``)."""
+        self._leading_at_top = at_top
+        self._relayout()
+
+    def set_trailing_at_bottom(self, at_bottom: bool) -> None:
+        """``True`` pins the trailing widget to the rail's bottom; ``False`` keeps
+        it adjacent to the destination group (Flutter ``trailingAtBottom``)."""
+        self._trailing_at_bottom = at_bottom
+        self._relayout()
+
     # -- layout ------------------------------------------------------------
 
     def _relayout(self) -> None:
         while self._lay.count():
             self._lay.takeAt(0)  # widgets stay parented to self; spacers dropped
-        if self._leading is not None:
+        # leadingAtTop: pin above the group's leading stretch; otherwise let it
+        # ride with the destinations after the stretch.
+        if self._leading is not None and self._leading_at_top:
             self._lay.addWidget(self._leading, 0, Qt.AlignmentFlag.AlignHCenter)
         if self._group in ("center", "bottom"):
             self._lay.addStretch(1)
+        if self._leading is not None and not self._leading_at_top:
+            self._lay.addWidget(self._leading, 0, Qt.AlignmentFlag.AlignHCenter)
         for d in self._dests:
             self._lay.addWidget(d)
+        # trailingAtBottom: pin below the group's trailing stretch; otherwise
+        # place it directly under the destinations.
+        if self._trailing is not None and not self._trailing_at_bottom:
+            self._lay.addWidget(self._trailing, 0, Qt.AlignmentFlag.AlignHCenter)
         if self._group in ("center", "top"):
             self._lay.addStretch(1)
-        if self._trailing is not None:
+        if self._trailing is not None and self._trailing_at_bottom:
             self._lay.addWidget(self._trailing, 0, Qt.AlignmentFlag.AlignHCenter)
 
     def sizeHint(self) -> QSize:  # noqa: N802

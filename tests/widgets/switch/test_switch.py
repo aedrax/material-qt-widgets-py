@@ -45,6 +45,33 @@ def test_renders(qtbot):
     sw.grab()
 
 
+def test_thumb_icon_renders_both_states(qtbot):
+    sw = MdSwitch(thumb_icon_on="check", thumb_icon_off="close")
+    qtbot.addWidget(sw)
+    assert sw.thumb_icon_on == "check"
+    assert sw.thumb_icon_off == "close"
+    sw.resize(sw.sizeHint())
+    sw.grab()  # off icon
+    sw.setChecked(True)
+    sw.grab()  # on icon
+
+
+def test_set_thumb_icon(qtbot):
+    sw = MdSwitch()
+    qtbot.addWidget(sw)
+    sw.set_thumb_icon(on="check")
+    assert sw.thumb_icon_on == "check"
+    assert sw.thumb_icon_off is None
+
+
+def test_label_sets_accessible_name(qtbot):
+    sw = MdSwitch(label="Wifi")
+    qtbot.addWidget(sw)
+    assert sw.label == "Wifi"
+    sw.set_label("Bluetooth")
+    assert sw.accessibleName() == "Bluetooth"
+
+
 def test_focus_ring(qtbot):
     sw = MdSwitch()
     qtbot.addWidget(sw)

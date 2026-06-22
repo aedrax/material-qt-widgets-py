@@ -56,6 +56,37 @@ def test_drag_high_cannot_cross_low(qtbot):
     assert rs.high == rs.low == 40
 
 
+def test_divisions_snap_both_handles(qtbot):
+    # 4 divisions over 0..100 → stops 0/25/50/75/100.
+    rs = _slider(qtbot, minimum=0, maximum=100, low=10, high=90, divisions=4)
+    assert rs.divisions == 4
+    assert rs.values() == (0, 100)  # 10→0, 90→100
+
+
+def test_divisions_snap_seam(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, divisions=4)
+    assert rs._snap(13) == 25
+    assert rs._snap(60) == 50
+    assert rs._snap(-5) == 0
+    assert rs._snap(999) == 100
+
+
+def test_set_divisions_resnaps(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, low=40, high=60)
+    assert rs.values() == (40, 60)  # continuous
+    rs.set_divisions(2)  # stops 0/50/100
+    assert rs.values() == (50, 50)
+
+
+def test_divisions_value_from_x_snaps(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, divisions=4)
+    track = rs._track_rect()
+    v = rs._value_from_x(track.left() + track.width() * 0.62)
+    assert v in (0, 25, 50, 75, 100)
+
+
 def test_renders(qtbot):
     rs = _slider(qtbot, low=25, high=75)
     rs.grab()
+    rs2 = _slider(qtbot, low=20, high=80, divisions=5)
+    rs2.grab()

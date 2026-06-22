@@ -42,11 +42,15 @@ class MdTooltip(MaterialWidgetMixin, QWidget):
         *,
         wait_ms: int = _DEFAULT_WAIT,
         show_ms: int = _DEFAULT_SHOW,
+        prefer_below: bool = False,
+        margin: int = 0,
     ) -> None:
         super().__init__(target.window())
         self._target = target
         self._wait_ms = wait_ms
         self._show_ms = show_ms
+        self._prefer_below = bool(prefer_below)
+        self._margin = int(margin)
 
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self._init_material(
@@ -83,6 +87,22 @@ class MdTooltip(MaterialWidgetMixin, QWidget):
     def set_text(self, text: str) -> None:
         self._label.setText(text)
 
+    @property
+    def prefer_below(self) -> bool:
+        """Whether the tooltip prefers to sit below the target (Flutter ``preferBelow``)."""
+        return self._prefer_below
+
+    def set_prefer_below(self, value: bool) -> None:
+        self._prefer_below = bool(value)
+
+    @property
+    def margin(self) -> int:
+        """Inset kept from the window edges when positioning (Flutter ``margin``)."""
+        return self._margin
+
+    def set_margin(self, value: int) -> None:
+        self._margin = int(value)
+
     def _restyle(self) -> None:
         self._label.setStyleSheet(
             f"color: {ThemeManager.instance().color(ColorRole.INVERSE_ON_SURFACE).name()};"
@@ -109,15 +129,24 @@ class MdTooltip(MaterialWidgetMixin, QWidget):
     def _position(self) -> None:
         window = self._target.window()
         size = self.sizeHint()
-        # Center horizontally over the target, place above it (flip below if the
-        # top would clip).
+        m = self._margin
+        # Center horizontally over the target. Place on the preferred side
+        # (above by default, below when ``prefer_below``), flipping to the other
+        # side if the preferred side would clip the window.
         top_left = self._target.mapTo(window, QPoint(0, 0))
         cx = top_left.x() + self._target.width() // 2
         x = cx - size.width() // 2
-        y = top_left.y() - size.height() - _GAP
-        if y < 0:
-            y = top_left.y() + self._target.height() + _GAP
-        x = max(0, min(x, window.width() - size.width()))
+        above_y = top_left.y() - size.height() - _GAP
+        below_y = top_left.y() + self._target.height() + _GAP
+        if self._prefer_below:
+            y = below_y
+            if y + size.height() > window.height() - m and above_y >= m:
+                y = above_y
+        else:
+            y = above_y
+            if y < m and below_y + size.height() <= window.height() - m:
+                y = below_y
+        x = max(m, min(x, window.width() - size.width() - m))
         self.move(x, y)
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802

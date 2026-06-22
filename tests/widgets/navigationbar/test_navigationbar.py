@@ -55,6 +55,21 @@ def test_badge(qtbot):
     assert dot._badge == "" and count._badge == "8" and plain._badge is None
 
 
+def test_selected_index_round_trip(qtbot):
+    bar = MdNavigationBar()
+    qtbot.addWidget(bar)
+    bar.add_destination("Home", icon="home")
+    bar.add_destination("Search", icon="search")
+    bar.add_destination("Saved", icon="bookmark")
+    assert bar.selected_index == 0  # first selected by default
+    bar.selected_index = 2
+    assert bar.selected_index == 2
+    bar.set_selected_index(1)
+    assert bar.selected_index == 1
+    bar.set_selected_index(99)  # out of range -> no-op
+    assert bar.selected_index == 1
+
+
 def test_renders_no_labels_and_badges(qtbot):
     bar = MdNavigationBar(label_behavior="hide")
     qtbot.addWidget(bar)

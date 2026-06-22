@@ -44,7 +44,11 @@ from ..widgets.fabmenu import MdFabMenu
 from ..widgets.loadingindicator import MdLoadingIndicator
 from ..widgets.toolbar import MdToolbar
 from ..widgets.searchbar import MdSearchBar
-from ..widgets.scrollbar import install_material_scrollbars, use_material_scrollbars
+from ..widgets.scrollbar import (
+    disable_horizontal_scroll,
+    install_material_scrollbars,
+    use_material_scrollbars,
+)
 from ..widgets.sidesheet import MdSideSheet, MdStandardSideSheet
 from ..widgets.button import (
     MdElevatedButton,
@@ -1464,6 +1468,12 @@ class GalleryWindow(QWidget):
         # Give every scroll area in the window a Material scrollbar (the carousel
         # keeps its bars off, so the blanket sweep is harmless there).
         install_material_scrollbars(self)
+        # The nav drawer is fixed-width inside a vertically-scrolling area; the
+        # v-bar's gutter would otherwise leave a little horizontal "play". Pin it
+        # *after* the install sweep, which replaces (and would drop a pin on) the
+        # horizontal bars.
+        disable_horizontal_scroll(self._nav_scroll)
+        disable_horizontal_scroll(self._modal._scroll)
 
         # Open matching the material-web.dev catalog theme by default.
         self._apply_preset(_PRESET_NAMES[0])

@@ -261,6 +261,27 @@ def use_material_scrollbars(area: QAbstractScrollArea) -> QAbstractScrollArea:
     return area
 
 
+def disable_horizontal_scroll(area: QAbstractScrollArea) -> QAbstractScrollArea:
+    """Genuinely lock ``area`` against horizontal scrolling; returns ``area``.
+
+    ``ScrollBarAlwaysOff`` only *hides* the bar — the area can still be nudged
+    horizontally by wheel/trackpad/keyboard. When fixed-width content sits in a
+    vertically-scrolling area, the vertical bar's gutter narrows the viewport
+    just below the content width, leaving a few pixels of horizontal "play".
+    Pinning the horizontal range to zero removes it. Opt-in (do *not* apply to
+    areas that scroll horizontally by other means, e.g. a ``QScroller``).
+    """
+    bar = area.horizontalScrollBar()
+
+    def pin() -> None:
+        if bar.minimum() != 0 or bar.maximum() != 0:
+            bar.setRange(0, 0)  # re-emits rangeChanged once, then settles
+
+    bar.rangeChanged.connect(lambda *_: pin())
+    pin()
+    return area
+
+
 def install_material_scrollbars(root: QWidget) -> None:
     """Convert every scroll area in ``root``'s tree to Material scrollbars.
 
@@ -285,6 +306,7 @@ __all__ = [
     "RADIUS",
     "THICKNESS",
     "THICKNESS_HOVER",
+    "disable_horizontal_scroll",
     "install_material_scrollbars",
     "thumb_metrics",
     "use_material_scrollbars",

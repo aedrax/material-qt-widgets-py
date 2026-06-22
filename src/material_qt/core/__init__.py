@@ -7,6 +7,7 @@ from .focus_ring import FocusRingController
 from .focus_util import drop_focus_within
 from .interaction_state import InteractionState
 from .material_widget import MaterialWidget, MaterialWidgetMixin
+from .modal_overlay import ModalOverlay
 from .motion import MOTION_ENABLED, animate, duration_ms, easing_curve
 from .responsive import (
     ResponsiveHelper,
@@ -27,6 +28,7 @@ __all__ = [
     "InteractionState",
     "MaterialWidget",
     "MaterialWidgetMixin",
+    "ModalOverlay",
     "ResponsiveHelper",
     "RippleController",
     "StateLayerPainter",

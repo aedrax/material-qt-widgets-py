@@ -14,8 +14,8 @@ first-day-of-week — the grid is hardcoded Sunday-first.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QDate, QEvent, QObject, QRectF, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtCore import QDate, QRectF, Qt, Signal
+from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
@@ -25,20 +25,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.focus_util import drop_focus_within
 from ...core.material_widget import MaterialWidgetMixin
-from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
+from ...core.modal_overlay import ModalOverlay
 from ...core.typography_util import font_for_role
 from ...tokens.color import ColorRole
 from ...tokens.elevation import ElevationLevel
-from ...tokens.motion import Duration, Easing
 from ...tokens.shape import CornerRadii, ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..button import MdTextButton
 from ..iconbutton import MdIconButton
 
-_SCRIM_OPACITY = 0.32
 _PANEL_W = 328
 _CELL = 40
 _PAD = 12
@@ -134,16 +131,13 @@ class _DatePanel(MaterialWidgetMixin, QWidget):
         self.paint_material_surface(painter)
 
 
-class MdDatePicker(QWidget):
+class MdDatePicker(ModalOverlay):
     """A modal date picker overlay."""
 
     accepted = Signal(QDate)
-    rejected = Signal()
-    closed = Signal()
 
     def __init__(self, parent: QWidget, *, initial_date: QDate | None = None) -> None:
         super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._selected = initial_date or QDate.currentDate()
         self._view = QDate(self._selected.year(), self._selected.month(), 1)
 
@@ -212,18 +206,10 @@ class MdDatePicker(QWidget):
         actions.addWidget(ok)
         pl.addLayout(actions)
 
-        self._fade = 0.0
-        self._anim = QVariantAnimation(self)
-        self._anim.setDuration(duration_ms(Duration.MEDIUM2))
-        self._anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
-        self._anim.valueChanged.connect(self._set_fade)
-
-        parent.installEventFilter(self)
         self._restyle()
         ThemeManager.instance().themeChanged.connect(self._restyle)
-        ThemeManager.instance().themeChanged.connect(self.update)
         self._refresh()
-        self.hide()
+        self._init_overlay(parent)
 
     # -- state -------------------------------------------------------------
 
@@ -267,80 +253,12 @@ class MdDatePicker(QWidget):
 
     # -- open / close ------------------------------------------------------
 
-    def open(self) -> None:
-        self.setGeometry(self.parentWidget().rect())
-        self._center_panel()
-        self.raise_()
-        self.show()
-        self.setFocus()
-        if MOTION_ENABLED:
-            self._anim.stop()
-            self._anim.setStartValue(0.0)
-            self._anim.setEndValue(1.0)
-            self._anim.start()
-        else:
-            self._set_fade(1.0)
-
     def _on_ok(self) -> None:
         self.accepted.emit(self._selected)
         self._close()
 
     def _on_cancel(self) -> None:
-        self.rejected.emit()
-        self._close()
-
-    def _close(self) -> None:
-        # Drop focus before hiding so Qt doesn't reassign it to a sibling with
-        # TabFocusReason, which would show a spurious keyboard focus ring.
-        drop_focus_within(self)
-        self.hide()
-        self.closed.emit()
-
-    def _set_fade(self, value) -> None:
-        self._fade = float(value)
-        self._center_panel()
-        self.update()
-
-    # -- geometry / scrim --------------------------------------------------
-
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
-        if obj is self.parentWidget() and event.type() == QEvent.Type.Resize:
-            if self.isVisible():
-                self.setGeometry(self.parentWidget().rect())
-                self._center_panel()
-        return False
-
-    def _center_panel(self) -> None:
-        self._panel.adjustSize()
-        w = self._panel.width()
-        h = self._panel.sizeHint().height()
-        slide = int((1.0 - self._fade) * 12)
-        self._panel.setGeometry(
-            int((self.width() - w) / 2),
-            int((self.height() - h) / 2) + slide, int(w), int(h),
-        )
-
-    def resizeEvent(self, event) -> None:  # noqa: N802
-        super().resizeEvent(event)
-        self._center_panel()
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802
-        if not self._panel.geometry().contains(event.position().toPoint()):
-            self.rejected.emit()
-            self._close()
-
-    def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Escape:
-            self.rejected.emit()
-            self._close()
-            return
-        super().keyPressEvent(event)
-
-    def paintEvent(self, event) -> None:  # noqa: N802
-        painter = QPainter(self)
-        scrim = QColor(ThemeManager.instance().color(ColorRole.SCRIM))
-        scrim.setAlphaF(_SCRIM_OPACITY * self._fade)
-        painter.fillRect(self.rect(), scrim)
+        self.dismiss()
 
 
 __all__ = ["MdDatePicker", "first_column"]

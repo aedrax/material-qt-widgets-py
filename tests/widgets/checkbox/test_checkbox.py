@@ -51,6 +51,23 @@ def test_ripple_and_focus(qtbot):
     assert cb.focus_ring is not None
 
 
+def test_indeterminate_constructor(qtbot):
+    cb = MdCheckbox(indeterminate=True)
+    qtbot.addWidget(cb)
+    assert cb.indeterminate is True
+    assert cb.isChecked() is False
+    cb.resize(cb.sizeHint())
+    cb.grab()
+
+
+def test_label_sets_accessible_name(qtbot):
+    cb = MdCheckbox(label="Accept terms")
+    qtbot.addWidget(cb)
+    assert cb.label == "Accept terms"
+    cb.set_label("Other")
+    assert cb.accessibleName() == "Other"
+
+
 def test_repeated_toggle_with_animation_settle(qtbot):
     """Regression: a finished animation must not leave a stale C++ object that
     crashes the next toggle (persistent-animation fix)."""

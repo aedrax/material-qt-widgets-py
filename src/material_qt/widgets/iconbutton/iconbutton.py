@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QPainter, QPen
 from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
+from ...core.long_press import LongPressMixin
 from ...core.material_widget import MaterialWidgetMixin
 from ...tokens.color import ColorRole
 from ...tokens.shape import ShapeScale
@@ -42,8 +43,11 @@ class IconButtonStyle:
     toggle_unselected_outline: ColorRole | None = None
 
 
-class MdIconButton(MaterialWidgetMixin, QAbstractButton):
+class MdIconButton(LongPressMixin, MaterialWidgetMixin, QAbstractButton):
     """Standard Material icon button (no container)."""
+
+    #: Emitted on a sustained press (Flutter ``onLongPress`` parity).
+    longPressed = Signal()
 
     STYLE = IconButtonStyle(
         container_role=None,
@@ -60,6 +64,8 @@ class MdIconButton(MaterialWidgetMixin, QAbstractButton):
         toggle: bool = False,
         selected_icon: str = "",
         checked: bool = False,
+        tooltip: str = "",
+        autofocus: bool = False,
     ) -> None:
         super().__init__(parent)
         self._icon_name = icon
@@ -76,6 +82,9 @@ class MdIconButton(MaterialWidgetMixin, QAbstractButton):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.toggled.connect(self._on_toggled)
+        if tooltip:
+            self.setToolTip(tooltip)
+        self._autofocus_pending = autofocus
 
     # -- resolution --------------------------------------------------------
 
@@ -135,13 +144,30 @@ class MdIconButton(MaterialWidgetMixin, QAbstractButton):
 
     # -- repaint / enable --------------------------------------------------
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        # autofocus is honored on first show (setFocus is a no-op before show).
+        if getattr(self, "_autofocus_pending", False):
+            self._autofocus_pending = False
+            self.setFocus()
+
     def enterEvent(self, event) -> None:  # noqa: N802
         super().enterEvent(event)
         self.update()
 
     def leaveEvent(self, event) -> None:  # noqa: N802
         super().leaveEvent(event)
+        self._cancel_long_press()
         self.update()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        super().mousePressEvent(event)
+        self._arm_long_press(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._consume_long_press_release():
+            return  # a long press fired; suppress the tap (no clicked)
+        super().mouseReleaseEvent(event)
 
     def changeEvent(self, event) -> None:  # noqa: N802
         if event.type() == QEvent.Type.EnabledChange and self.ripple is not None:

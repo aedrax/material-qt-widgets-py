@@ -24,9 +24,9 @@ def test_sort_string_toggles_direction(qtbot):
     t.set_columns(["Name"])
     for n in ["Cupcake", "Apple", "Banana"]:
         t.add_row([n])
-    t._sort_by(0)  # asc
+    t.sort_by(0)  # asc
     assert [r[0] for r in t._rows] == ["Apple", "Banana", "Cupcake"]
-    t._sort_by(0)  # desc
+    t.sort_by(0)  # desc
     assert [r[0] for r in t._rows] == ["Cupcake", "Banana", "Apple"]
 
 
@@ -35,7 +35,7 @@ def test_sort_numeric_is_value_order_not_lexical(qtbot):
     t.set_columns(["N"], numeric=[True])
     for n in [9, 100, 20]:
         t.add_row([n])
-    t._sort_by(0)
+    t.sort_by(0)
     # Numeric: 9 < 20 < 100 (lexical would give 100, 20, 9).
     assert [r[0] for r in t._rows] == ["9", "20", "100"]
 
@@ -45,9 +45,9 @@ def test_sort_changed_signal(qtbot):
     t.set_columns(["A", "B"])
     seen = []
     t.sortChanged.connect(lambda c, asc: seen.append((c, asc)))
-    t._sort_by(1)
+    t.sort_by(1)
     assert seen[-1] == (1, True)
-    t._sort_by(1)
+    t.sort_by(1)
     assert seen[-1] == (1, False)
 
 
@@ -69,3 +69,51 @@ def test_renders(qtbot):
     t.add_row(["Eclair", 262])
     t.resize(t.sizeHint())
     t.grab()
+
+
+def test_sort_state_accessors(qtbot):
+    t = _table(qtbot)
+    t.set_columns(["A", "B"])
+    assert t.sort_column_index is None
+    t.sort_by(1)
+    assert t.sort_column_index == 1
+    assert t.sort_ascending is True
+    t.sort_by(1)  # toggles
+    assert t.sort_ascending is False
+
+
+def test_sort_by_explicit_direction(qtbot):
+    t = _table(qtbot)
+    t.set_columns(["N"], numeric=[True])
+    for n in [3, 1, 2]:
+        t.add_row([n])
+    t.sort_by(0, ascending=False)
+    assert [r[0] for r in t._rows] == ["3", "2", "1"]
+    assert t.sort_ascending is False
+
+
+def test_sort_by_out_of_range_ignored(qtbot):
+    t = _table(qtbot)
+    t.set_columns(["A"])
+    t.sort_by(5)
+    assert t.sort_column_index is None
+
+
+def test_column_spacing(qtbot):
+    t = _table(qtbot, column_spacing=12)
+    t.set_columns(["A", "B"])
+    assert t.column_spacing == 12
+    t.column_spacing = 32
+    assert t.column_spacing == 32
+
+
+def test_select_all_changed_signal(qtbot):
+    t = _table(qtbot, selectable=True)
+    t.set_columns(["Name"])
+    for n in ["a", "b"]:
+        t.add_row([n])
+    seen = []
+    t.selectAllChanged.connect(seen.append)
+    t._select_all.setChecked(True)
+    assert seen == [True]
+    assert t.selected_rows() == [0, 1]

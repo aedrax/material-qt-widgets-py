@@ -257,10 +257,16 @@ class MdTimePicker(ModalOverlay):
         initial_time: QTime | None = None,
         initial_entry_mode: str = "dial",
         hour24: bool = False,
+        confirm_text: str = "OK",
+        cancel_text: str = "Cancel",
+        help_text: str | None = None,
     ) -> None:
         super().__init__(parent)
         t = initial_time or QTime.currentTime()
         self._hour24 = hour24
+        # help_text overrides the per-mode label ("Select time" / "Enter time");
+        # when given it is shown verbatim in both entry modes (cf. Flutter helpText).
+        self._help_text = help_text
         self._is_pm = t.hour() >= 12
         # In 24h mode the dial value IS the hour (0-23); in 12h it's 1-12 + AM/PM.
         self._hour = t.hour() if hour24 else (t.hour() % 12 or 12)
@@ -310,8 +316,8 @@ class MdTimePicker(ModalOverlay):
         self._toggle.clicked.connect(self._toggle_entry)
         actions.addWidget(self._toggle)
         actions.addStretch(1)
-        cancel = MdTextButton("Cancel")
-        ok = MdTextButton("OK")
+        cancel = MdTextButton(cancel_text)
+        ok = MdTextButton(confirm_text)
         cancel.clicked.connect(self._on_cancel)
         ok.clicked.connect(self._on_ok)
         actions.addWidget(cancel)
@@ -450,7 +456,10 @@ class MdTimePicker(ModalOverlay):
         self._dial_row.setVisible(not is_input)
         # Icon shows the mode you can switch TO: keyboard (->input) / clock.
         self._toggle.set_icon("schedule" if is_input else "keyboard")
-        self._support.setText("Enter time" if is_input else "Select time")
+        if self._help_text is not None:
+            self._support.setText(self._help_text)
+        else:
+            self._support.setText("Enter time" if is_input else "Select time")
         if is_input:
             self._hour_edit.setText(f"{self._hour:02d}")
             self._minute_edit.setText(f"{self._minute:02d}")

@@ -7,9 +7,11 @@ right-aligned (numeric) and sorted by clicking the header (toggling asc/desc wit
 an arrow indicator). An optional leading checkbox column selects rows, with a
 header select-all checkbox.
 
-Signals: ``sortChanged(column, ascending)`` and ``selectionChanged()``.
+Signals: ``sortChanged(column, ascending)``, ``selectionChanged()`` and
+``selectAllChanged(checked)``. Pagination lives in the sibling
+:class:`MdPaginatedDataTable` wrapper (``paginated.py``).
 
-Deferred (scaffold): pagination, in-cell editing, sticky header, and column
+Deferred (scaffold): in-cell editing, sticky header, and column
 resizing. Row selection resets when the data is sorted or changed (the rows are
 re-rendered), since selection is tracked by display index, not row identity.
 """
@@ -37,6 +39,28 @@ _HEADING_H = 56
 _ROW_H = 52
 _MARGIN = 24
 _CHECKBOX_W = 56
+
+
+def sort_rows(
+    rows: list[list[str]], column: int, *, numeric: bool, ascending: bool
+) -> None:
+    """Sort ``rows`` in place by ``column``.
+
+    Numeric columns sort by float value (unparseable cells sort last); text
+    columns sort case-insensitively. Shared by :class:`MdDataTable` and the
+    paginated wrapper so both order identically.
+    """
+
+    def key(row: list[str]):
+        v = row[column] if column < len(row) else ""
+        if numeric:
+            try:
+                return (0, float(v))
+            except ValueError:
+                return (1, 0.0)
+        return (0, v.lower())
+
+    rows.sort(key=key, reverse=not ascending)
 
 
 class _HeaderCell(QLabel):
@@ -67,10 +91,18 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
 
     sortChanged = Signal(int, bool)
     selectionChanged = Signal()
+    selectAllChanged = Signal(bool)
 
-    def __init__(self, parent: QWidget | None = None, *, selectable: bool = False) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        selectable: bool = False,
+        column_spacing: int = _MARGIN,
+    ) -> None:
         super().__init__(parent)
         self._selectable = selectable
+        self._column_spacing = max(0, int(column_spacing))
         self._columns: list[str] = []
         self._numeric: list[bool] = []
         self._rows: list[list[str]] = []
@@ -101,28 +133,62 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
         self._rows.append([str(v) for v in values])
         self._render()
 
+    def set_rows(self, rows: list[list]) -> None:
+        """Replace all rows in one shot (single re-render)."""
+        self._rows = [[str(v) for v in row] for row in rows]
+        self._render()
+
     def selected_rows(self) -> list[int]:
         return [i for i, cb in enumerate(self._row_checks) if cb.isChecked()]
 
+    @property
+    def column_spacing(self) -> int:
+        """Horizontal spacing/margin between columns, in pixels."""
+        return self._column_spacing
+
+    @column_spacing.setter
+    def column_spacing(self, value: int) -> None:
+        value = max(0, int(value))
+        if value != self._column_spacing:
+            self._column_spacing = value
+            self._render()
+
     # -- sorting -----------------------------------------------------------
 
-    def _sort_by(self, column: int) -> None:
-        if self._sort_col == column:
-            self._sort_asc = not self._sort_asc
+    @property
+    def sort_column_index(self) -> int | None:
+        """The column index currently sorted, or ``None`` (Flutter ``sortColumnIndex``)."""
+        return self._sort_col
+
+    @property
+    def sort_ascending(self) -> bool:
+        """Whether the current sort is ascending (Flutter ``sortAscending``)."""
+        return self._sort_asc
+
+    def sort_by(self, column: int, *, ascending: bool | None = None) -> None:
+        """Programmatically sort by ``column``.
+
+        With ``ascending=None`` this toggles direction when the column is
+        already sorted (matching a header click); otherwise it sets the given
+        direction. Emits ``sortChanged`` and re-renders.
+        """
+        if not (0 <= column < len(self._columns)):
+            return
+        if ascending is None:
+            if self._sort_col == column:
+                self._sort_asc = not self._sort_asc
+            else:
+                self._sort_col = column
+                self._sort_asc = True
         else:
             self._sort_col = column
-            self._sort_asc = True
-
-        def key(row: list[str]):
-            v = row[column]
-            if self._numeric[column]:
-                try:
-                    return (0, float(v))
-                except ValueError:
-                    return (1, 0.0)
-            return (0, v.lower())
-
-        self._rows.sort(key=key, reverse=not self._sort_asc)
+            self._sort_asc = bool(ascending)
+        sort_rows(
+            self._rows,
+            column,
+            numeric=self._numeric[column],
+            ascending=self._sort_asc,
+        )
         self.sortChanged.emit(column, self._sort_asc)
         self._render()
 
@@ -155,7 +221,7 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
         row.setFixedHeight(height)
         hl = QHBoxLayout(row)
         hl.setContentsMargins(_MARGIN, 0, _MARGIN, 0)
-        hl.setSpacing(_MARGIN)
+        hl.setSpacing(self._column_spacing)
         return row, hl
 
     def _render(self) -> None:
@@ -174,7 +240,7 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
             hl.addWidget(self._select_all)
         for col, label in enumerate(self._columns):
             cell = _HeaderCell(label, col, numeric=self._numeric[col])
-            cell.clicked.connect(self._sort_by)
+            cell.clicked.connect(self.sort_by)
             state = "" if self._sort_col != col else ("asc" if self._sort_asc else "desc")
             cell.set_sort_indicator(state)
             color = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
@@ -207,6 +273,7 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
             cb.blockSignals(True)
             cb.setChecked(checked)
             cb.blockSignals(False)
+        self.selectAllChanged.emit(checked)
         self.selectionChanged.emit()
 
 

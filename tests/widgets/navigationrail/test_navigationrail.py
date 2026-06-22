@@ -77,7 +77,49 @@ def test_trailing_and_group_alignment(qtbot):
     qtbot.addWidget(rail)
     rail.add_destination("Home", icon="home")
     trailing = QLabel("⚙")
-    rail.set_trailing(trailing)
-    # trailing is the last item in the rail's layout
+    # trailing_at_bottom pins it past the trailing stretch -> last item
+    rail.set_trailing(trailing, at_bottom=True)
     last = rail._lay.itemAt(rail._lay.count() - 1)
     assert last.widget() is trailing
+
+
+def test_trailing_default_not_pinned_to_bottom(qtbot):
+    from PySide6.QtWidgets import QLabel
+    rail = MdNavigationRail(group_alignment="top")
+    qtbot.addWidget(rail)
+    rail.add_destination("Home", icon="home")
+    trailing = QLabel("⚙")
+    rail.set_trailing(trailing)  # trailing_at_bottom defaults False
+    # trailing sits right after the destinations, before the trailing stretch.
+    last = rail._lay.itemAt(rail._lay.count() - 1)
+    assert last.spacerItem() is not None  # stretch is last, not the trailing
+
+
+def test_leading_at_top_placement(qtbot):
+    from PySide6.QtWidgets import QLabel
+    rail = MdNavigationRail(group_alignment="center")
+    qtbot.addWidget(rail)
+    rail.add_destination("Home", icon="home")
+    leading = QLabel("≡")
+    rail.set_leading(leading, at_top=True)
+    # leading_at_top -> first layout item, before the leading stretch.
+    first = rail._lay.itemAt(0)
+    assert first.widget() is leading
+    rail.set_leading_at_top(False)
+    # now the leading stretch comes first.
+    assert rail._lay.itemAt(0).spacerItem() is not None
+
+
+def test_selected_index_round_trip(qtbot):
+    rail = MdNavigationRail()
+    qtbot.addWidget(rail)
+    rail.add_destination("Home", icon="home")
+    rail.add_destination("Search", icon="search")
+    rail.add_destination("Saved", icon="bookmark")
+    assert rail.selected_index == 0
+    rail.selected_index = 2
+    assert rail.selected_index == 2
+    rail.set_selected_index(1)
+    assert rail.selected_index == 1
+    rail.set_selected_index(99)
+    assert rail.selected_index == 1

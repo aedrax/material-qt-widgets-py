@@ -17,7 +17,7 @@ widget's top-right corner; the badge tracks the host's size/visibility.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -42,9 +42,24 @@ class MdBadge(QWidget):
     that value; leave it empty for the small dot form.
     """
 
-    def __init__(self, value: str = "", parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        value: str = "",
+        parent: QWidget | None = None,
+        *,
+        is_label_visible: bool = True,
+        alignment: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
+        offset: QPoint | None = None,
+        background_role: ColorRole = ColorRole.ERROR,
+        text_role: ColorRole = ColorRole.ON_ERROR,
+    ) -> None:
         super().__init__(parent)
         self._value = ""
+        self._is_label_visible = bool(is_label_visible)
+        self._alignment = alignment
+        self._offset = offset if offset is not None else QPoint(0, 0)
+        self._background_role = background_role
+        self._text_role = text_role
         self._tracker: _HostTracker | None = None
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
@@ -75,6 +90,59 @@ class MdBadge(QWidget):
         """Whether the badge renders the large (value) form."""
         return bool(self._value)
 
+    # -- visibility / placement / theme -----------------------------------
+
+    @property
+    def is_label_visible(self) -> bool:
+        """Whether the badge is shown at all (Flutter ``isLabelVisible``)."""
+        return self._is_label_visible
+
+    def set_label_visible(self, visible: bool) -> None:
+        """Show/hide the badge; when False the badge stays hidden on its host."""
+        self._is_label_visible = bool(visible)
+        if not self._is_label_visible:
+            self.hide()
+        elif self.parentWidget() is not None and self.parentWidget().isVisible():
+            self.show()
+        self._reposition_on_host()
+        self.update()
+
+    @property
+    def alignment(self) -> Qt.AlignmentFlag:
+        """Anchor corner on the host (Flutter ``alignment``; default top-right)."""
+        return self._alignment
+
+    def set_alignment(self, alignment: Qt.AlignmentFlag) -> None:
+        self._alignment = alignment
+        self._reposition_on_host()
+
+    @property
+    def offset(self) -> QPoint:
+        """Pixel offset from the anchor corner (Flutter ``offset``)."""
+        return self._offset
+
+    def set_offset(self, offset: QPoint) -> None:
+        self._offset = offset
+        self._reposition_on_host()
+
+    @property
+    def background_role(self) -> ColorRole:
+        """Fill color role (Flutter ``backgroundColor``)."""
+        return self._background_role
+
+    def set_background_role(self, role: ColorRole) -> None:
+        self._background_role = role
+        self.update()
+
+    @property
+    def text_role(self) -> ColorRole:
+        """Label color role (Flutter ``textColor``)."""
+        return self._text_role
+
+    def set_text_role(self, role: ColorRole) -> None:
+        self._text_role = role
+        self.update()
+
     # -- typography --------------------------------------------------------
 
     def _label_font(self) -> QFont:
@@ -100,7 +168,7 @@ class MdBadge(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
         theme = ThemeManager.instance()
-        bg: QColor = theme.color(ColorRole.ERROR)
+        bg: QColor = theme.color(self._background_role)
 
         rect = QRectF(self.rect())
         # corner-full pill: radius == half the height.
@@ -110,7 +178,7 @@ class MdBadge(QWidget):
 
         if self.is_large:
             painter.setFont(self._label_font())
-            painter.setPen(theme.color(ColorRole.ON_ERROR))
+            painter.setPen(theme.color(self._text_role))
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, self._value)
 
     # -- attachment --------------------------------------------------------
@@ -126,7 +194,7 @@ class MdBadge(QWidget):
         self._tracker = _HostTracker(self, host)
         host.installEventFilter(self._tracker)
         self._reposition_on_host()
-        if host.isVisible():
+        if host.isVisible() and self._is_label_visible:
             self.show()
 
     def _reposition_on_host(self) -> None:
@@ -134,10 +202,26 @@ class MdBadge(QWidget):
         if host is None:
             return
         self.resize(self.sizeHint())
-        # Anchor the badge's right edge to the host's right edge at the top,
-        # matching the web component's top/right corner placement.
-        x = host.width() - self.width()
-        self.move(max(0, x), 0)
+        # Anchor to the corner named by ``alignment`` (default top-right), then
+        # apply ``offset``. Mirrors Flutter's alignment/offset placement.
+        align = self._alignment
+        if align & Qt.AlignmentFlag.AlignRight:
+            x = host.width() - self.width()
+        elif align & Qt.AlignmentFlag.AlignHCenter:
+            x = (host.width() - self.width()) // 2
+        else:  # AlignLeft / default
+            x = 0
+        if align & Qt.AlignmentFlag.AlignBottom:
+            y = host.height() - self.height()
+        elif align & Qt.AlignmentFlag.AlignVCenter:
+            y = (host.height() - self.height()) // 2
+        else:  # AlignTop / default
+            y = 0
+        # Clamp the anchor to the host, then apply the (possibly negative)
+        # offset unclamped, matching Flutter's offset semantics.
+        x = max(0, x) + self._offset.x()
+        y = max(0, y) + self._offset.y()
+        self.move(x, y)
         self.raise_()
 
 
@@ -152,7 +236,7 @@ class _HostTracker(QObject):
         kind = event.type()
         if kind in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.Move):
             self._badge._reposition_on_host()
-            if kind == QEvent.Type.Show:
+            if kind == QEvent.Type.Show and self._badge.is_label_visible:
                 self._badge.show()
         elif kind == QEvent.Type.Hide:
             self._badge.hide()

@@ -39,13 +39,17 @@ class MdCheckbox(MaterialWidgetMixin, QAbstractButton):
         parent: QWidget | None = None,
         *,
         checked: bool = False,
+        indeterminate: bool = False,
         error: bool = False,
+        label: str | None = None,
     ) -> None:
         super().__init__(parent)
         self.setCheckable(True)
-        self._indeterminate = False
+        self._indeterminate = bool(indeterminate)
         self._error = bool(error)
-        self._check_t = 1.0 if checked else 0.0
+        if label is not None:
+            self.setAccessibleName(label)
+        self._check_t = 1.0 if (checked or self._indeterminate) else 0.0
         # One persistent animation, reused per toggle (never deleted mid-flight,
         # so repeated clicks never hit a stale C++ object).
         self._anim = QVariantAnimation(self)
@@ -84,6 +88,14 @@ class MdCheckbox(MaterialWidgetMixin, QAbstractButton):
     def set_error(self, value: bool) -> None:
         self._error = bool(value)
         self.update()
+
+    @property
+    def label(self) -> str:
+        """Accessible name (Material ``semanticLabel``)."""
+        return self.accessibleName()
+
+    def set_label(self, label: str | None) -> None:
+        self.setAccessibleName(label or "")
 
     # -- state -------------------------------------------------------------
 

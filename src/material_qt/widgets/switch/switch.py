@@ -10,7 +10,7 @@ handle on hover/press. Built on :class:`QAbstractButton` (checkable).
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt, QVariantAnimation
+from PySide6.QtCore import QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QAbstractButton, QWidget
 
@@ -21,6 +21,7 @@ from ...tokens.motion import Duration, Easing
 from ...tokens.shape import ShapeScale
 from ...tokens.state import StateLayer
 from ...theme.theme_manager import ThemeManager
+from ..icon.icon import material_symbols_font
 
 _TRACK_W = 52
 _TRACK_H = 32
@@ -30,6 +31,7 @@ _HANDLE_UNSELECTED = 16.0
 _HANDLE_SELECTED = 24.0
 _HANDLE_PRESSED = 28.0
 _STATE_LAYER = 40.0
+_ICON_SIZE = 16  # M3 thumb icon size
 _DISABLED_OPACITY = 0.38
 _ANIM = Duration.SHORT4  # 200ms
 
@@ -42,10 +44,20 @@ class MdSwitch(MaterialWidgetMixin, QAbstractButton):
         parent: QWidget | None = None,
         *,
         checked: bool = False,
+        thumb_icon_on: str | None = None,
+        thumb_icon_off: str | None = None,
+        label: str | None = None,
     ) -> None:
         super().__init__(parent)
         self.setCheckable(True)
         self._t = 1.0 if checked else 0.0
+        # thumbIcon: ligature names shown on the handle, resolved by state.
+        # ``off`` is shown while unselected, ``on`` while selected (mirrors
+        # Flutter's inactive/active Icon resolution). Either may be None.
+        self._thumb_icon_on = thumb_icon_on
+        self._thumb_icon_off = thumb_icon_off
+        if label is not None:
+            self.setAccessibleName(label)
         # One persistent animation, reused per toggle (avoids stale C++ object
         # on repeated clicks once an animation has finished).
         self._anim = QVariantAnimation(self)
@@ -77,6 +89,38 @@ class MdSwitch(MaterialWidgetMixin, QAbstractButton):
     def _set_t(self, value) -> None:
         self._t = float(value)
         self.update()
+
+    # -- properties --------------------------------------------------------
+
+    @property
+    def thumb_icon_on(self) -> str | None:
+        """Ligature name drawn on the handle while selected (or ``None``)."""
+        return self._thumb_icon_on
+
+    @property
+    def thumb_icon_off(self) -> str | None:
+        """Ligature name drawn on the handle while unselected (or ``None``)."""
+        return self._thumb_icon_off
+
+    def set_thumb_icon(
+        self, on: str | None = None, off: str | None = None
+    ) -> None:
+        """Set the handle icons (Material ``thumbIcon``).
+
+        ``on`` is shown while the switch is selected, ``off`` while unselected.
+        Pass ``None`` for a state to show no icon there.
+        """
+        self._thumb_icon_on = on
+        self._thumb_icon_off = off
+        self.update()
+
+    @property
+    def label(self) -> str:
+        """Accessible name (Material ``semanticLabel``)."""
+        return self.accessibleName()
+
+    def set_label(self, label: str | None) -> None:
+        self.setAccessibleName(label or "")
 
     # -- sizing ------------------------------------------------------------
 
@@ -194,6 +238,29 @@ class MdSwitch(MaterialWidgetMixin, QAbstractButton):
         painter.setBrush(handle_color)
         hr = dia / 2.0
         painter.drawEllipse(QRectF(cx - hr, cy - hr, 2 * hr, 2 * hr))
+
+        # Thumb icon (Material thumbIcon): off shown unselected, on selected.
+        icon = self._thumb_icon_on if t >= 0.5 else self._thumb_icon_off
+        if icon:
+            self._draw_thumb_icon(painter, icon, cx, cy, enabled)
+
+    def _draw_thumb_icon(
+        self, painter: QPainter, name: str, cx: float, cy: float, enabled: bool
+    ) -> None:
+        font = material_symbols_font(_ICON_SIZE)
+        if font is None:
+            return
+        theme = ThemeManager.instance()
+        color = theme.color(ColorRole.ON_PRIMARY_CONTAINER)
+        if not enabled:
+            color = theme.color(ColorRole.ON_SURFACE)
+            color.setAlphaF(_DISABLED_OPACITY)
+        painter.save()
+        painter.setFont(font)
+        painter.setPen(color)
+        box = QRectF(cx - _ICON_SIZE, cy - _ICON_SIZE, 2 * _ICON_SIZE, 2 * _ICON_SIZE)
+        painter.drawText(box, Qt.AlignmentFlag.AlignCenter, name)
+        painter.restore()
 
 
 def _blend(a: QColor, b: QColor, t: float) -> QColor:

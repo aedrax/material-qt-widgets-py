@@ -35,13 +35,19 @@ class MdBanner(MaterialWidgetMixin, QWidget):
         parent: QWidget | None = None,
         *,
         icon: str = "",
+        elevation: int = 0,
+        background_role: ColorRole = ColorRole.SURFACE,
+        divider_role: ColorRole = ColorRole.OUTLINE_VARIANT,
     ) -> None:
         super().__init__(parent)
+        self._background_role = background_role
+        self._divider_role = divider_role
         self._init_material(
             shape=ShapeScale.NONE,
             ripple=False,
             focus_ring=False,
-            surface_role=ColorRole.SURFACE,
+            elevation=elevation,
+            surface_role=background_role,
         )
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -66,7 +72,9 @@ class MdBanner(MaterialWidgetMixin, QWidget):
         body.addLayout(self._actions, 0)
 
         outer.addLayout(body)
-        outer.addWidget(MdDivider())
+        self._divider = MdDivider()
+        self._divider._color_role = self._divider_role
+        outer.addWidget(self._divider)
 
         self._restyle()
         ThemeManager.instance().themeChanged.connect(self._restyle)
@@ -74,6 +82,34 @@ class MdBanner(MaterialWidgetMixin, QWidget):
     def _restyle(self) -> None:
         c = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
         self._text.setStyleSheet(f"color: {c};")
+
+    # -- theme / elevation -------------------------------------------------
+    # ``elevation`` and :meth:`set_elevation` come from MaterialWidgetMixin.
+
+    @property
+    def elevation(self) -> int:
+        """Banner elevation level (Flutter ``elevation``)."""
+        return int(self._elevation)
+
+    @property
+    def background_role(self) -> ColorRole:
+        """Container fill color role (Flutter ``backgroundColor``)."""
+        return self._background_role
+
+    def set_background_role(self, role: ColorRole) -> None:
+        self._background_role = role
+        self._surface_role = role
+        self.update()
+
+    @property
+    def divider_role(self) -> ColorRole:
+        """Bottom-edge divider color role (Flutter ``dividerColor``)."""
+        return self._divider_role
+
+    def set_divider_role(self, role: ColorRole) -> None:
+        self._divider_role = role
+        self._divider._color_role = role
+        self._divider.update()
 
     def add_action(self, text: str) -> MdTextButton:
         """Append a trailing text-button action and return it."""

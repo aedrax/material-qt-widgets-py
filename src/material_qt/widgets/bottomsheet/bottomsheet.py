@@ -35,8 +35,9 @@ _PAD = 16
 
 
 class _SheetPanel(MaterialWidgetMixin, QWidget):
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, show_handle: bool = True) -> None:
         super().__init__(parent)
+        self._show_handle = show_handle
         self._init_material(
             shape=CornerRadii(_RADIUS, _RADIUS, 0, 0),
             elevation=ElevationLevel.LEVEL1,
@@ -49,6 +50,8 @@ class _SheetPanel(MaterialWidgetMixin, QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self.paint_material_surface(painter)
+        if not self._show_handle:
+            return
         # Drag handle.
         theme = ThemeManager.instance()
         handle = theme.color(ColorRole.ON_SURFACE_VARIANT)
@@ -67,14 +70,29 @@ class MdBottomSheet(QWidget):
 
     closed = Signal()
 
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(
+        self,
+        parent: QWidget,
+        *,
+        show_drag_handle: bool = True,
+        is_dismissible: bool = True,
+        max_height_ratio: float = 0.6,
+    ) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._shown = 0.0  # 0 = below the edge, 1 = resting
+        # Whether a scrim click dismisses (Flutter's isDismissible).
+        self._is_dismissible = is_dismissible
+        # Cap on the panel height as a fraction of the host (Flutter's
+        # constraints / scrollControlDisabledMaxHeightRatio).
+        self._max_height_ratio = max_height_ratio
+        self._show_drag_handle = show_drag_handle
 
-        self._panel = _SheetPanel(self)
+        self._panel = _SheetPanel(self, show_handle=show_drag_handle)
         self._content = QVBoxLayout(self._panel)
-        self._content.setContentsMargins(_PAD, 28, _PAD, _PAD)
+        # Reserve top space for the handle only when it is shown.
+        top = 28 if show_drag_handle else _PAD
+        self._content.setContentsMargins(_PAD, top, _PAD, _PAD)
         self._content.setSpacing(8)
 
         self._anim = QVariantAnimation(self)
@@ -139,7 +157,7 @@ class MdBottomSheet(QWidget):
             return
         self._panel.adjustSize()
         w = host.width()
-        h = min(self._panel.sizeHint().height(), int(host.height() * 0.6))
+        h = min(self._panel.sizeHint().height(), int(host.height() * self._max_height_ratio))
         resting_y = host.height() - h
         offscreen_y = host.height()
         y = int(offscreen_y + (resting_y - offscreen_y) * self._shown)
@@ -156,12 +174,24 @@ class MdBottomSheet(QWidget):
         super().resizeEvent(event)
         self._reposition()
 
+    @property
+    def is_dismissible(self) -> bool:
+        return self._is_dismissible
+
+    def set_dismissible(self, value: bool) -> None:
+        self._is_dismissible = value
+
+    @property
+    def show_drag_handle(self) -> bool:
+        return self._show_drag_handle
+
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        if not self._panel.geometry().contains(event.position().toPoint()):
+        if (self._is_dismissible
+                and not self._panel.geometry().contains(event.position().toPoint())):
             self.dismiss()
 
     def keyPressEvent(self, event) -> None:  # noqa: N802
-        if event.key() == Qt.Key.Key_Escape:
+        if event.key() == Qt.Key.Key_Escape and self._is_dismissible:
             self.dismiss()
             return
         super().keyPressEvent(event)

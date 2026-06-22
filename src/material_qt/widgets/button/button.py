@@ -15,11 +15,13 @@ Built on :class:`QAbstractButton` so the standard ``clicked`` signal, ``text``,
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QPainter, QPen
 from PySide6.QtWidgets import QAbstractButton, QWidget
 
+from ...core.long_press import LongPressMixin
 from ...core.material_widget import MaterialWidgetMixin
 from ...tokens.color import ColorRole
 from ...tokens.elevation import ElevationLevel
@@ -27,6 +29,13 @@ from ...tokens.shape import ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..icon.icon import material_symbols_font
+
+
+class IconAlignment(Enum):
+    """Leading vs. trailing placement of the button's icon (Flutter parity)."""
+
+    START = "start"
+    END = "end"
 
 # Shared measurements from the button tokens (all variants: height 40, shape full,
 # label label-large, icon 18px). Padding/gap from the M3 button spec.
@@ -55,8 +64,11 @@ class ButtonStyle:
     text_padding: bool = False  # text button uses tighter horizontal padding
 
 
-class MdButton(MaterialWidgetMixin, QAbstractButton):
+class MdButton(LongPressMixin, MaterialWidgetMixin, QAbstractButton):
     """Base Material button. Use a variant subclass for concrete styling."""
+
+    #: Emitted on a sustained press (Flutter ``onLongPress`` parity).
+    longPressed = Signal()
 
     STYLE: ButtonStyle = ButtonStyle(
         container_role=ColorRole.PRIMARY,
@@ -73,10 +85,14 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
         parent: QWidget | None = None,
         *,
         icon: str = "",
+        icon_alignment: IconAlignment = IconAlignment.START,
+        tooltip: str = "",
+        autofocus: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setText(text)
         self._icon_name = icon
+        self._icon_alignment = icon_alignment
         style = self.STYLE
         self._init_material(
             shape=ShapeScale.FULL,
@@ -88,6 +104,9 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
             surface_role=style.container_role or ColorRole.SURFACE,
         )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        if tooltip:
+            self.setToolTip(tooltip)
+        self._autofocus_pending = autofocus
 
     # -- icon --------------------------------------------------------------
 
@@ -100,6 +119,16 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
             return
         self._icon_name = name
         self.updateGeometry()
+        self.update()
+
+    @property
+    def icon_alignment(self) -> IconAlignment:
+        return self._icon_alignment
+
+    def set_icon_alignment(self, alignment: IconAlignment) -> None:
+        if alignment == self._icon_alignment:
+            return
+        self._icon_alignment = alignment
         self.update()
 
     # -- sizing ------------------------------------------------------------
@@ -139,6 +168,13 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
 
     # -- repaint triggers --------------------------------------------------
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        # autofocus is honored on first show (setFocus is a no-op before show).
+        if getattr(self, "_autofocus_pending", False):
+            self._autofocus_pending = False
+            self.setFocus()
+
     def enterEvent(self, event) -> None:  # noqa: N802
         super().enterEvent(event)
         self._refresh_elevation()
@@ -146,14 +182,19 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
 
     def leaveEvent(self, event) -> None:  # noqa: N802
         super().leaveEvent(event)
+        self._cancel_long_press()
         self._refresh_elevation()
         self.update()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         super().mousePressEvent(event)
+        self._arm_long_press(event)
         self._refresh_elevation()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._consume_long_press_release():
+            self._refresh_elevation()
+            return  # a long press fired; suppress the tap (no clicked)
         super().mouseReleaseEvent(event)
         self._refresh_elevation()
 
@@ -214,29 +255,40 @@ class MdButton(MaterialWidgetMixin, QAbstractButton):
             label_color.setAlphaF(_DISABLED_LABEL_OPACITY)
 
         has_icon = bool(self._icon_name)
-        content_w = self._label_advance() + (
-            _ICON_SIZE + _LABEL_GAP if has_icon else 0
-        )
+        label_w = self._label_advance()
+        content_w = label_w + (_ICON_SIZE + _LABEL_GAP if has_icon else 0)
         x = (self.width() - content_w) / 2.0
-        if has_icon:
-            icon_font = material_symbols_font(_ICON_SIZE, filled=False)
-            if icon_font is not None:
-                painter.setFont(icon_font)
-                painter.setPen(label_color)
-                icon_rect = QRectF(x, 0, _ICON_SIZE, self.height())
-                painter.drawText(
-                    icon_rect, Qt.AlignmentFlag.AlignCenter, self._icon_name
-                )
-            x += _ICON_SIZE + _LABEL_GAP
 
-        painter.setFont(self.font())
-        painter.setPen(label_color)
-        label_rect = QRectF(x, 0, self.width() - x, self.height())
-        painter.drawText(
-            label_rect,
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            self.text(),
-        )
+        def _draw_icon(at_x: float) -> None:
+            icon_font = material_symbols_font(_ICON_SIZE, filled=False)
+            if icon_font is None:
+                return
+            painter.setFont(icon_font)
+            painter.setPen(label_color)
+            painter.drawText(
+                QRectF(at_x, 0, _ICON_SIZE, self.height()),
+                Qt.AlignmentFlag.AlignCenter,
+                self._icon_name,
+            )
+
+        def _draw_label(at_x: float) -> None:
+            painter.setFont(self.font())
+            painter.setPen(label_color)
+            painter.drawText(
+                QRectF(at_x, 0, self.width() - at_x, self.height()),
+                Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                self.text(),
+            )
+
+        leading_icon = not has_icon or self._icon_alignment is IconAlignment.START
+        if leading_icon:
+            if has_icon:
+                _draw_icon(x)
+                x += _ICON_SIZE + _LABEL_GAP
+            _draw_label(x)
+        else:
+            _draw_label(x)
+            _draw_icon(x + label_w + _LABEL_GAP)
 
     def _inset_path(self, rect: QRectF):
         from ...core.shape_util import rounded_path
@@ -305,6 +357,7 @@ class MdTextButton(MdButton):
 
 __all__ = [
     "ButtonStyle",
+    "IconAlignment",
     "MdButton",
     "MdElevatedButton",
     "MdFilledButton",

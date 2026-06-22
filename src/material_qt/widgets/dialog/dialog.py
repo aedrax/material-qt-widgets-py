@@ -10,11 +10,12 @@ on a scrim click or Escape.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -62,8 +63,11 @@ class MdDialog(ModalOverlay):
         headline: str = "",
         icon: str = "",
         supporting_text: str = "",
+        barrier_dismissible: bool = True,
     ) -> None:
         super().__init__(parent)
+        # Whether a scrim click or Escape dismisses (Flutter's barrierDismissible).
+        self._barrier_dismissible = barrier_dismissible
         self._panel = _DialogPanel(self)
         pl = QVBoxLayout(self._panel)
         pl.setContentsMargins(_PAD, _PAD, _PAD, _PAD)
@@ -117,6 +121,32 @@ class MdDialog(ModalOverlay):
     def add_content(self, widget: QWidget) -> None:
         self._body.addWidget(widget)
 
+    def add_option(self, text: str) -> QPushButton:
+        """Add a full-width, left-aligned tappable option row (SimpleDialog).
+
+        Returns the button; connect its ``clicked`` signal to react. Selecting an
+        option does not auto-close — call :meth:`close_dialog` (or emit
+        :attr:`accepted`) from the handler if desired, mirroring Flutter's
+        ``SimpleDialogOption`` whose ``onPressed`` typically pops the dialog.
+        """
+        btn = QPushButton(text)
+        btn.setFlat(True)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setFont(font_for_role("body-large"))
+        # Left-aligned text, full row, no chrome — styled to the surface.
+        def apply() -> None:
+            color = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
+            btn.setStyleSheet(
+                "QPushButton {"
+                f" color: {color}; background: transparent; border: none;"
+                " text-align: left; padding: 12px 0px; }"
+            )
+
+        apply()
+        ThemeManager.instance().themeChanged.connect(apply)
+        self._body.addWidget(btn)
+        return btn
+
     def add_action(self, text: str, *, accept: bool | None = None) -> MdTextButton:
         """Add a text-button action. accept=True/False emits accepted/rejected
         (and closes); None just returns the button for custom handling."""
@@ -140,6 +170,28 @@ class MdDialog(ModalOverlay):
     def close_dialog(self) -> None:
         """Close without rejecting (public alias for the base close)."""
         self._close()
+
+    # -- barrier dismiss (Flutter's barrierDismissible) --------------------
+
+    @property
+    def barrier_dismissible(self) -> bool:
+        return self._barrier_dismissible
+
+    def set_barrier_dismissible(self, value: bool) -> None:
+        self._barrier_dismissible = value
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        # Scrim-click dismissal lives in the (un-editable) base; gate it here so a
+        # non-dismissible dialog swallows the click instead of closing.
+        if not self._barrier_dismissible:
+            return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        # Likewise gate Escape (the base would otherwise dismiss).
+        if not self._barrier_dismissible and event.key() == Qt.Key.Key_Escape:
+            return
+        super().keyPressEvent(event)
 
     def _panel_width(self) -> int:
         # Clamp to the available width (pickers use a fixed-width panel instead).

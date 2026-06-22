@@ -47,22 +47,80 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         step: int = 0,
         ticks: bool = False,
         labeled: bool = False,
+        divisions: int = 0,
     ) -> None:
         super().__init__(parent)
         self._labeled = labeled
         self.setOrientation(Qt.Orientation.Horizontal)
         self.setMinimum(minimum)
         self.setMaximum(maximum)
-        self.setValue(value)
-        self._show_ticks = bool(ticks) and step > 0
+        # ``divisions`` (Flutter semantics): N intervals → N+1 discrete stops,
+        # snap interval ``(max-min)/N``. When > 0 it takes precedence over
+        # ``step`` for snapping and always shows tick marks.
+        self._divisions = max(0, int(divisions))
+        # Remember the explicit step-tick intent so toggling ``divisions`` off
+        # later does not accidentally enable ticks from the default singleStep.
+        self._step_ticks = bool(ticks) and step > 0
+        self._show_ticks = self._divisions > 0 or self._step_ticks
         if step > 0:
             self.setSingleStep(step)
             self.setPageStep(step)
         self._dragging = False
+        self._apply_division_step()
+        self.setValue(self._snap(value))
         self._init_material(shape=None, ripple=False, focus_ring=False)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
         self._label_font = font_for(spec_for(TypescaleRole.LABEL_LARGE))
+
+    # -- divisions ---------------------------------------------------------
+
+    @property
+    def divisions(self) -> int:
+        """Number of discrete intervals (N → N+1 stops); 0 = continuous."""
+        return self._divisions
+
+    def set_divisions(self, divisions: int) -> None:
+        """Set the number of discrete intervals and snap the current value.
+
+        Flutter semantics: ``divisions = N`` yields ``N + 1`` evenly spaced
+        stops. Setting this (> 0) shows tick marks and takes precedence over
+        ``step`` when snapping.
+        """
+        self._divisions = max(0, int(divisions))
+        self._show_ticks = self._divisions > 0 or self._step_ticks
+        self._apply_division_step()
+        self.setValue(self._snap(self.value()))
+        self.update()
+
+    def _apply_division_step(self) -> None:
+        """Make arrow/page keys move by one division stop when divisions set.
+
+        ``sliderChange`` re-snaps afterwards, so an uneven interval (e.g.
+        100/3) lands on the exact stop even if the rounded step undershoots.
+        """
+        if self._divisions <= 0:
+            return
+        span = self.maximum() - self.minimum()
+        if span > 0:
+            interval = max(1, int(round(span / self._divisions)))
+            self.setSingleStep(interval)
+            self.setPageStep(interval)
+
+    def _snap(self, value: int) -> int:
+        """Snap ``value`` to the nearest division stop (clamped to bounds).
+
+        With ``divisions`` unset this is a clamp-only no-op; ``step``-based
+        snapping happens in :meth:`_value_from_x` to preserve prior behaviour.
+        """
+        lo, hi = self.minimum(), self.maximum()
+        value = max(lo, min(hi, value))
+        span = hi - lo
+        if self._divisions > 0 and span > 0:
+            interval = span / self._divisions
+            idx = round((value - lo) / interval)
+            value = int(round(lo + idx * interval))
+        return max(lo, min(hi, value))
 
     # -- geometry ----------------------------------------------------------
 
@@ -94,6 +152,8 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         f = max(0.0, min(1.0, f))
         span = self.maximum() - self.minimum()
         raw = self.minimum() + f * span
+        if self._divisions > 0:
+            return self._snap(int(round(raw)))
         step = self.singleStep()
         if step > 0:
             raw = self.minimum() + round((raw - self.minimum()) / step) * step
@@ -145,6 +205,17 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         self.update()
 
     def sliderChange(self, change) -> None:  # noqa: N802
+        # Snap keyboard/wheel/page/programmatic changes to a division stop.
+        # The mouse path already snaps via ``_value_from_x``; skip it then.
+        if (
+            change == self.SliderChange.SliderValueChange
+            and self._divisions > 0
+            and not self._dragging
+        ):
+            snapped = self._snap(self.value())
+            if snapped != self.value():
+                self.setValue(snapped)  # re-enters; the second pass is a no-op
+                return
         super().sliderChange(change)
         self.update()
 
@@ -183,10 +254,13 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
             QRectF(track.left(), track.top(), hx - track.left(), _TRACK_H), r, r
         )
 
-        # Tick marks (discrete).
-        if self._show_ticks and self.singleStep() > 0:
-            span = self.maximum() - self.minimum()
-            n = span // self.singleStep()
+        # Tick marks (discrete). ``divisions`` (if set) wins over ``step``.
+        n = 0
+        if self._divisions > 0:
+            n = self._divisions
+        elif self._show_ticks and self.singleStep() > 0:
+            n = (self.maximum() - self.minimum()) // self.singleStep()
+        if self._show_ticks and n > 0:
             for i in range(n + 1):
                 tx = track.left() + track.width() * (i / n if n else 0)
                 on_active = tx <= hx

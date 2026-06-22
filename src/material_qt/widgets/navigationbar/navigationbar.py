@@ -62,6 +62,23 @@ class MdNavigationBar(MaterialWidgetMixin, QWidget):
         for tab in self._tabs:
             tab.set_label_behavior(behavior)
 
+    # -- selection (Flutter ``selectedIndex`` / ``onDestinationSelected``) ---
+
+    @property
+    def selected_index(self) -> int:
+        """Index of the active destination, or ``-1`` if none."""
+        return self._group.checkedId()
+
+    @selected_index.setter
+    def selected_index(self, index: int) -> None:
+        self.set_selected_index(index)
+
+    def set_selected_index(self, index: int) -> None:
+        """Programmatically select the destination at ``index``."""
+        button = self._group.button(index)
+        if button is not None:
+            button.setChecked(True)
+
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(max(360, sum(t.sizeHint().width() for t in self._tabs)), _HEIGHT)
 

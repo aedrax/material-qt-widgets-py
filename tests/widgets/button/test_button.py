@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QPoint, Qt
+from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 
 from material_qt.tokens.color import ColorRole
 from material_qt.tokens.elevation import ElevationLevel
 from material_qt.widgets.button import (
+    IconAlignment,
     MdElevatedButton,
     MdFilledButton,
     MdOutlinedButton,
@@ -67,3 +68,149 @@ def test_renders_without_crash(qtbot):
         qtbot.addWidget(b)
         b.resize(b.sizeHint())
         b.grab()  # forces a paintEvent
+
+
+def test_tooltip_kwarg(qtbot):
+    b = MdFilledButton("OK", tooltip="Confirm")
+    qtbot.addWidget(b)
+    assert b.toolTip() == "Confirm"
+
+
+def test_icon_alignment(qtbot):
+    b = MdFilledButton("Next", icon="arrow_forward", icon_alignment=IconAlignment.END)
+    qtbot.addWidget(b)
+    assert b.icon_alignment is IconAlignment.END
+    b.resize(b.sizeHint())
+    b.grab()  # END layout must paint without crashing
+    b.set_icon_alignment(IconAlignment.START)
+    assert b.icon_alignment is IconAlignment.START
+
+
+def test_long_press_signal(qtbot):
+    b = MdFilledButton("Hold")
+    qtbot.addWidget(b)
+    b.resize(b.sizeHint())
+    fired = []
+    b.longPressed.connect(lambda: fired.append(1))
+    press = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(5, 5),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    b.mousePressEvent(press)
+    # Fire the timer synchronously rather than waiting the real timeout.
+    b._emit_long_press()
+    assert fired == [1]
+
+
+def test_long_press_cancelled_on_release(qtbot):
+    b = MdFilledButton("Hold")
+    qtbot.addWidget(b)
+    b.resize(b.sizeHint())
+    press = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(5, 5),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    b.mousePressEvent(press)
+    assert b._long_press_timer.isActive()
+    release = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease,
+        QPointF(5, 5),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    b.mouseReleaseEvent(release)
+    assert not b._long_press_timer.isActive()
+
+
+def test_long_press_suppresses_click(qtbot):
+    """A fired long press must NOT also emit clicked (matches Flutter onTap)."""
+    b = MdFilledButton("Hold")
+    qtbot.addWidget(b)
+    b.resize(b.sizeHint())
+    longs, clicks = [], []
+    b.longPressed.connect(lambda: longs.append(1))
+    b.clicked.connect(lambda: clicks.append(1))
+    press = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(5, 5),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    b.mousePressEvent(press)
+    b._emit_long_press()  # fire the timer synchronously
+    release = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease,
+        QPointF(5, 5),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    b.mouseReleaseEvent(release)
+    assert longs == [1]
+    assert clicks == []  # long press consumed the release
+
+
+def test_short_press_still_clicks(qtbot):
+    """A normal press/release (no long press) still emits clicked."""
+    b = MdFilledButton("Tap")
+    qtbot.addWidget(b)
+    b.resize(b.sizeHint())
+    clicks = []
+    b.clicked.connect(lambda: clicks.append(1))
+    press = QMouseEvent(
+        QMouseEvent.Type.MouseButtonPress,
+        QPointF(5, 5),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    release = QMouseEvent(
+        QMouseEvent.Type.MouseButtonRelease,
+        QPointF(5, 5),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    b.mousePressEvent(press)
+    b.mouseReleaseEvent(release)
+    assert clicks == [1]
+
+
+def test_autofocus_on_show(qtbot):
+    from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    other = MdFilledButton("Other")
+    target = MdFilledButton("Target", autofocus=True)
+    layout.addWidget(other)
+    layout.addWidget(target)
+    qtbot.addWidget(host)
+    host.show()
+    QApplication.setActiveWindow(host)  # offscreen needs an active window
+    qtbot.waitExposed(host)
+    assert target.hasFocus()
+
+
+def test_no_autofocus_by_default(qtbot):
+    from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    other = MdFilledButton("Other")
+    target = MdFilledButton("Target")  # autofocus defaults to False
+    layout.addWidget(other)
+    layout.addWidget(target)
+    qtbot.addWidget(host)
+    host.show()
+    QApplication.setActiveWindow(host)
+    qtbot.waitExposed(host)
+    assert not target.hasFocus()

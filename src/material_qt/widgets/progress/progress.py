@@ -28,10 +28,14 @@ _INDETERMINATE_MS = 1600
 
 class _ProgressBase(MaterialWidgetMixin, QWidget):
     def __init__(self, parent: QWidget | None = None, *, value: float = 0.0,
-                 indeterminate: bool = False) -> None:
+                 indeterminate: bool = False,
+                 color_role: ColorRole = ColorRole.PRIMARY,
+                 track_role: ColorRole = ColorRole.SURFACE_CONTAINER_HIGHEST) -> None:
         super().__init__(parent)
         self._value = max(0.0, min(1.0, value))
         self._indeterminate = bool(indeterminate)
+        self._color_role = color_role
+        self._track_role = track_role
         self._phase = 0.0
         self._anim: QVariantAnimation | None = None
         self._init_material(shape=None, ripple=False, focus_ring=False)
@@ -39,6 +43,24 @@ class _ProgressBase(MaterialWidgetMixin, QWidget):
             self._start_anim()
 
     # -- properties --------------------------------------------------------
+
+    @property
+    def color_role(self) -> ColorRole:
+        """Theme role of the active indicator (Flutter ``color``/``valueColor``)."""
+        return self._color_role
+
+    def set_color_role(self, role: ColorRole) -> None:
+        self._color_role = role
+        self.update()
+
+    @property
+    def track_role(self) -> ColorRole:
+        """Theme role of the track (Flutter ``backgroundColor``)."""
+        return self._track_role
+
+    def set_track_role(self, role: ColorRole) -> None:
+        self._track_role = role
+        self.update()
 
     @property
     def value(self) -> float:
@@ -100,27 +122,63 @@ class _ProgressBase(MaterialWidgetMixin, QWidget):
 
 
 class MdLinearProgress(_ProgressBase):
-    """A 4px linear progress bar (determinate or indeterminate)."""
+    """A linear progress bar (determinate or indeterminate).
+
+    ``min_height`` is the bar thickness (Flutter ``minHeight``) and
+    ``border_radius`` the corner radius (Flutter ``borderRadius``); the latter
+    defaults to half the thickness, giving a fully rounded bar.
+    """
+
+    def __init__(self, parent: QWidget | None = None, *, value: float = 0.0,
+                 indeterminate: bool = False,
+                 color_role: ColorRole = ColorRole.PRIMARY,
+                 track_role: ColorRole = ColorRole.SURFACE_CONTAINER_HIGHEST,
+                 min_height: float = _THICK,
+                 border_radius: float | None = None) -> None:
+        self._min_height = float(min_height)
+        self._border_radius = border_radius
+        super().__init__(parent, value=value, indeterminate=indeterminate,
+                         color_role=color_role, track_role=track_role)
+
+    @property
+    def min_height(self) -> float:
+        """Bar thickness (Flutter ``minHeight``)."""
+        return self._min_height
+
+    def set_min_height(self, value: float) -> None:
+        self._min_height = float(value)
+        self.updateGeometry()
+        self.update()
+
+    @property
+    def border_radius(self) -> float:
+        """Corner radius; defaults to half the thickness when unset."""
+        return self._border_radius if self._border_radius is not None else self._min_height / 2.0
+
+    def set_border_radius(self, value: float | None) -> None:
+        self._border_radius = None if value is None else float(value)
+        self.update()
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(240, _THICK)
+        return QSize(240, round(self._min_height))
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
-        return QSize(_LINEAR_MIN_W, _THICK)
+        return QSize(_LINEAR_MIN_W, round(self._min_height))
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         theme = ThemeManager.instance()
         w = self.width()
+        thick = self._min_height
         cy = self.height() / 2.0
-        track = QRectF(0, cy - _THICK / 2.0, w, _THICK)
-        r = _THICK / 2.0
+        track = QRectF(0, cy - thick / 2.0, w, thick)
+        r = self.border_radius
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(theme.color(ColorRole.SURFACE_CONTAINER_HIGHEST))
+        painter.setBrush(theme.color(self._track_role))
         painter.drawRoundedRect(track, r, r)
 
-        painter.setBrush(theme.color(ColorRole.PRIMARY))
+        painter.setBrush(theme.color(self._color_role))
         if self._indeterminate:
             # A bar of ~40% width sweeping left->right.
             bar_w = w * 0.4
@@ -128,18 +186,32 @@ class MdLinearProgress(_ProgressBase):
             x0 = max(0.0, x)
             x1 = min(w, x + bar_w)
             if x1 > x0:
-                painter.drawRoundedRect(QRectF(x0, track.top(), x1 - x0, _THICK), r, r)
+                painter.drawRoundedRect(QRectF(x0, track.top(), x1 - x0, thick), r, r)
         else:
-            painter.drawRoundedRect(QRectF(0, track.top(), w * self._value, _THICK), r, r)
+            painter.drawRoundedRect(QRectF(0, track.top(), w * self._value, thick), r, r)
 
 
 class MdCircularProgress(_ProgressBase):
     """A circular progress ring (determinate or indeterminate)."""
 
     def __init__(self, parent: QWidget | None = None, *, value: float = 0.0,
-                 indeterminate: bool = False, size: int = _CIRCULAR_SIZE) -> None:
+                 indeterminate: bool = False, size: int = _CIRCULAR_SIZE,
+                 color_role: ColorRole = ColorRole.PRIMARY,
+                 track_role: ColorRole = ColorRole.SURFACE_CONTAINER_HIGHEST,
+                 stroke_width: float = _THICK) -> None:
         self._size = int(size)
-        super().__init__(parent, value=value, indeterminate=indeterminate)
+        self._stroke_width = float(stroke_width)
+        super().__init__(parent, value=value, indeterminate=indeterminate,
+                         color_role=color_role, track_role=track_role)
+
+    @property
+    def stroke_width(self) -> float:
+        """Ring thickness (Flutter ``strokeWidth``)."""
+        return self._stroke_width
+
+    def set_stroke_width(self, value: float) -> None:
+        self._stroke_width = float(value)
+        self.update()
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(self._size, self._size)
@@ -151,20 +223,21 @@ class MdCircularProgress(_ProgressBase):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         theme = ThemeManager.instance()
-        margin = _THICK / 2.0 + 1
+        sw = self._stroke_width
+        margin = sw / 2.0 + 1
         box = QRectF(
             margin, margin,
             self.width() - 2 * margin, self.height() - 2 * margin,
         )
 
-        track_pen = QPen(theme.color(ColorRole.SURFACE_CONTAINER_HIGHEST))
-        track_pen.setWidthF(_THICK)
+        track_pen = QPen(theme.color(self._track_role))
+        track_pen.setWidthF(sw)
         track_pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(track_pen)
         painter.drawArc(box, 0, 360 * 16)
 
-        pen = QPen(theme.color(ColorRole.PRIMARY))
-        pen.setWidthF(_THICK)
+        pen = QPen(theme.color(self._color_role))
+        pen.setWidthF(sw)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         painter.setPen(pen)
         if self._indeterminate:

@@ -30,6 +30,9 @@ class Demo(QWidget):
         root.addWidget(QLabel("Discrete (step 10, ticks):"))
         root.addWidget(MdSlider(value=60, step=10, ticks=True))
 
+        root.addWidget(QLabel("Divisions (5 intervals, labeled):"))
+        root.addWidget(MdSlider(value=40, divisions=5, labeled=True))
+
         root.addWidget(QLabel("Disabled:"))
         d = MdSlider(value=30)
         d.setEnabled(False)

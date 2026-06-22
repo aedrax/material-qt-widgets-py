@@ -12,10 +12,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from PySide6.QtCore import QEvent, QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QFontMetrics, QPainter
 from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
+from ...core.long_press import LongPressMixin
 from ...core.material_widget import MaterialWidgetMixin
 from ...tokens.color import ColorRole
 from ...tokens.elevation import ElevationLevel
@@ -74,8 +75,11 @@ class _FabConfig:
     fg_role: ColorRole
 
 
-class MdFab(MaterialWidgetMixin, QAbstractButton):
+class MdFab(LongPressMixin, MaterialWidgetMixin, QAbstractButton):
     """A Material 3 floating action button."""
+
+    #: Emitted on a sustained press (Flutter ``onLongPress`` parity).
+    longPressed = Signal()
 
     def __init__(
         self,
@@ -86,6 +90,8 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
         color: FabColor = FabColor.SURFACE,
         label: str = "",
         lowered: bool = False,
+        tooltip: str = "",
+        autofocus: bool = False,
     ) -> None:
         super().__init__(parent)
         self._icon_name = icon
@@ -111,6 +117,9 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
             self.setFont(font_for(spec_for(TypescaleRole.LABEL_LARGE)))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        if tooltip:
+            self.setToolTip(tooltip)
+        self._autofocus_pending = autofocus
 
     # -- content -----------------------------------------------------------
 
@@ -150,6 +159,13 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
 
     # -- repaint / enable --------------------------------------------------
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        # autofocus is honored on first show (setFocus is a no-op before show).
+        if getattr(self, "_autofocus_pending", False):
+            self._autofocus_pending = False
+            self.setFocus()
+
     def enterEvent(self, event) -> None:  # noqa: N802
         super().enterEvent(event)
         self._refresh_elevation()
@@ -157,14 +173,19 @@ class MdFab(MaterialWidgetMixin, QAbstractButton):
 
     def leaveEvent(self, event) -> None:  # noqa: N802
         super().leaveEvent(event)
+        self._cancel_long_press()
         self._refresh_elevation()
         self.update()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
         super().mousePressEvent(event)
+        self._arm_long_press(event)
         self._refresh_elevation()
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if self._consume_long_press_release():
+            self._refresh_elevation()
+            return  # a long press fired; suppress the tap (no clicked)
         super().mouseReleaseEvent(event)
         self._refresh_elevation()
 

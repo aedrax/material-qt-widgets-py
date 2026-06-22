@@ -58,6 +58,7 @@ class MdField(MaterialWidgetMixin, QWidget):
         label: str = "",
         supporting_text: str = "",
         error: bool = False,
+        multiline_box_height: int | None = None,
     ) -> None:
         super().__init__(parent)
         self._variant = variant
@@ -68,6 +69,14 @@ class MdField(MaterialWidgetMixin, QWidget):
         self._populated = False
         self._content: QWidget | None = None
         self._float = 0.0  # 0 = resting, 1 = floated
+        # Optional icon slots, drawn inside the box at the leading/trailing edge.
+        self._leading: QWidget | None = None
+        self._trailing: QWidget | None = None
+        # Optional counter text drawn at the bottom-right of the supporting row.
+        self._counter = ""
+        # When set, the input box grows taller than the single-line default so a
+        # multiline content widget fits. ``None`` reproduces the single-line box.
+        self._box_h = int(multiline_box_height) if multiline_box_height else _BOX_H
 
         if variant is FieldVariant.FILLED:
             radii = CornerRadii(_CORNER, _CORNER, 0.0, 0.0)
@@ -95,13 +104,18 @@ class MdField(MaterialWidgetMixin, QWidget):
         self._content = widget
         widget.setParent(self)
         widget.installEventFilter(self)
-        # A QLineEdit content should be chrome-less so the field draws the
-        # container/indicator; make it transparent so the label shows through.
-        from PySide6.QtWidgets import QLineEdit
+        # Content widgets should be chrome-less so the field draws the
+        # container/indicator; make them transparent so the label shows through.
+        from PySide6.QtWidgets import QFrame, QLineEdit, QPlainTextEdit, QTextEdit
 
         if isinstance(widget, QLineEdit):
             widget.setFrame(False)
             widget.setStyleSheet("background: transparent; border: none;")
+        elif isinstance(widget, (QPlainTextEdit, QTextEdit)):
+            widget.setFrameShape(QFrame.Shape.NoFrame)
+            widget.setStyleSheet("background: transparent; border: none;")
+            widget.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            widget.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._relayout_content()
         widget.show()
 
@@ -114,6 +128,41 @@ class MdField(MaterialWidgetMixin, QWidget):
 
     def set_error(self, error: bool) -> None:
         self._error = bool(error)
+        self.update()
+
+    def set_supporting_text(self, text: str) -> None:
+        changed_presence = bool(text) != bool(self._supporting)
+        self._supporting = text
+        if changed_presence:
+            self.updateGeometry()
+        self.update()
+
+    def set_counter(self, text: str) -> None:
+        """Set the counter text shown at the bottom-right (e.g. ``"3/10"``)."""
+        changed_presence = bool(text) != bool(self._counter)
+        self._counter = text
+        if changed_presence:
+            self.updateGeometry()
+        self.update()
+
+    def set_leading(self, widget: QWidget | None) -> None:
+        """Place a widget (typically an icon) at the field's leading edge."""
+        self._set_slot("_leading", widget)
+
+    def set_trailing(self, widget: QWidget | None) -> None:
+        """Place a widget (typically an icon/button) at the trailing edge."""
+        self._set_slot("_trailing", widget)
+
+    def _set_slot(self, attr: str, widget: QWidget | None) -> None:
+        old = getattr(self, attr)
+        if old is not None and old is not widget:
+            old.setParent(None)
+            old.deleteLater()
+        setattr(self, attr, widget)
+        if widget is not None:
+            widget.setParent(self)
+            widget.show()
+        self._relayout_content()
         self.update()
 
     @property
@@ -153,10 +202,18 @@ class MdField(MaterialWidgetMixin, QWidget):
 
     # -- geometry ----------------------------------------------------------
 
+    @property
+    def _field_h(self) -> int:
+        """Total box-area height (``_TOP`` + box), accounting for multiline."""
+        return _TOP + self._box_h
+
+    def _has_support_row(self) -> bool:
+        return bool(self._supporting or self._error or self._counter)
+
     def sizeHint(self):  # noqa: N802
         from PySide6.QtCore import QSize
 
-        h = _FIELD_H + (_SUPPORT_H if (self._supporting or self._error) else 0)
+        h = self._field_h + (_SUPPORT_H if self._has_support_row() else 0)
         return QSize(210, h)
 
     def minimumSizeHint(self):  # noqa: N802
@@ -168,14 +225,43 @@ class MdField(MaterialWidgetMixin, QWidget):
         super().resizeEvent(event)
         self._relayout_content()
 
+    def _slot_size(self, widget: QWidget) -> int:
+        sh = widget.sizeHint()
+        return max(sh.width(), sh.height(), 24)
+
+    def _leading_inset(self) -> int:
+        if self._leading is None:
+            return _PAD
+        return _PAD + self._slot_size(self._leading) + 12
+
+    def _trailing_inset(self) -> int:
+        if self._trailing is None:
+            return _PAD
+        return _PAD + self._slot_size(self._trailing) + 12
+
     def _relayout_content(self) -> None:
+        # Vertically center icon slots within the single-line portion of the box.
+        slot_center = _TOP + min(self._box_h, _BOX_H) / 2.0
+        if self._leading is not None:
+            s = self._slot_size(self._leading)
+            self._leading.setGeometry(_PAD, int(slot_center - s / 2), s, s)
+        if self._trailing is not None:
+            s = self._slot_size(self._trailing)
+            self._trailing.setGeometry(
+                self.width() - _PAD - s, int(slot_center - s / 2), s, s
+            )
         if self._content is None:
             return
         # Content sits in the lower part of the box, leaving room for the floated
         # label at the top.
         top = _TOP + (18 if self._label else 12)
+        left = self._leading_inset()
+        right = self._trailing_inset()
         self._content.setGeometry(
-            _PAD, top, max(0, self.width() - 2 * _PAD), max(0, _FIELD_H - top - 6)
+            left,
+            top,
+            max(0, self.width() - left - right),
+            max(0, self._field_h - top - 6),
         )
 
     # -- painting ----------------------------------------------------------
@@ -185,7 +271,7 @@ class MdField(MaterialWidgetMixin, QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
         theme = ThemeManager.instance()
-        box = QRectF(0, _TOP, self.width(), _BOX_H)
+        box = QRectF(0, _TOP, self.width(), self._box_h)
 
         accent = ColorRole.ERROR if self._error else (
             ColorRole.PRIMARY if self._focused else None
@@ -209,7 +295,7 @@ class MdField(MaterialWidgetMixin, QWidget):
         pen = QPen(theme.color(role))
         pen.setWidthF(height)
         painter.setPen(pen)
-        y = _FIELD_H - height / 2.0
+        y = self._field_h - height / 2.0
         painter.drawLine(QPointF(0, y), QPointF(self.width(), y))
 
     def _paint_outlined(self, painter, theme, box, accent) -> None:
@@ -232,7 +318,12 @@ class MdField(MaterialWidgetMixin, QWidget):
 
             notch = QRegion(self.rect())
             notch = notch.subtracted(
-                QRegion(int(_PAD - 2), 0, int(label_w), int(_TOP + width + 2))
+                QRegion(
+                    int(self._leading_inset() - 2),
+                    0,
+                    int(label_w),
+                    int(_TOP + width + 2),
+                )
             )
             painter.setClipRegion(notch)
             painter.drawPath(path)
@@ -253,28 +344,45 @@ class MdField(MaterialWidgetMixin, QWidget):
         font = self._label_font if t < 0.5 else self._float_font
         painter.setFont(font)
         painter.setPen(theme.color(role))
-        resting_center = _TOP + _BOX_H / 2.0
+        # The label aligns with the (leading-inset) content at all times, so the
+        # floated label sits above the input and over the notch cut at the same x.
+        left = self._leading_inset()
+        resting_center = _TOP + min(self._box_h, _BOX_H) / 2.0
         floated_center = _TOP if self._variant is FieldVariant.OUTLINED else _TOP + 6.0
         center_y = resting_center + (floated_center - resting_center) * t
         h = QFontMetrics(font).height()
         painter.drawText(
-            QRectF(_PAD, center_y - h / 2.0, self.width() - 2 * _PAD, h),
+            QRectF(left, center_y - h / 2.0, self.width() - left - _PAD, h),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             self._label,
         )
 
     def _paint_supporting(self, painter, theme) -> None:
-        if not (self._supporting or self._error):
+        if not self._has_support_row():
             return
-        text = self._supporting
-        role = ColorRole.ERROR if self._error else ColorRole.ON_SURFACE_VARIANT
         painter.setFont(self._support_font)
+        y = self._field_h + 2
+        role = ColorRole.ERROR if self._error else ColorRole.ON_SURFACE_VARIANT
         painter.setPen(theme.color(role))
-        painter.drawText(
-            QRectF(_PAD, _FIELD_H + 2, self.width() - 2 * _PAD, _SUPPORT_H),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            text,
-        )
+        # Reserve the counter's width on the right so supporting text never
+        # overlaps it.
+        counter_w = 0.0
+        if self._counter:
+            counter_w = QFontMetrics(self._support_font).horizontalAdvance(
+                self._counter
+            ) + 8
+        if self._supporting:
+            painter.drawText(
+                QRectF(_PAD, y, self.width() - 2 * _PAD - counter_w, _SUPPORT_H),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                self._supporting,
+            )
+        if self._counter:
+            painter.drawText(
+                QRectF(_PAD, y, self.width() - 2 * _PAD, _SUPPORT_H),
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                self._counter,
+            )
 
 
 __all__ = ["FieldVariant", "MdField"]

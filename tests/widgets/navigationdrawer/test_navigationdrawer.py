@@ -57,6 +57,44 @@ def test_active_icon(qtbot):
     assert item._icon == "inbox"
 
 
+def test_selected_index_round_trip(qtbot):
+    d = MdNavigationDrawer()
+    qtbot.addWidget(d)
+    d.add_destination("Inbox", icon="inbox")
+    d.add_destination("Sent", icon="send")
+    d.add_destination("Spam", icon="report")
+    assert d.selected_index == 0
+    d.selected_index = 2
+    assert d.selected_index == 2
+    d.set_selected_index(1)
+    assert d.selected_index == 1
+    d.set_selected_index(99)
+    assert d.selected_index == 1
+
+
+def test_footer_is_last_and_destinations_stay_grouped(qtbot):
+    from PySide6.QtWidgets import QLabel
+    d = MdNavigationDrawer()
+    qtbot.addWidget(d)
+    d.add_destination("Inbox", icon="inbox")
+    footer = QLabel("v1.0")
+    d.set_footer(footer)
+    # footer is pinned to the very bottom (after the trailing stretch).
+    assert d._lay.itemAt(d._lay.count() - 1).widget() is footer
+    # a destination added AFTER the footer still lands above the stretch.
+    later = d.add_destination("Sent", icon="send")
+    footer_idx = d._lay.indexOf(footer)
+    later_idx = d._lay.indexOf(later)
+    assert later_idx < footer_idx
+
+
+def test_set_width(qtbot):
+    d = MdNavigationDrawer()
+    qtbot.addWidget(d)
+    d.set_width(280)
+    assert d.width() == 280
+
+
 def test_renders_with_sections_and_dividers(qtbot):
     d = MdNavigationDrawer(headline="Mail")
     qtbot.addWidget(d)

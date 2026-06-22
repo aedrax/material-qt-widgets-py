@@ -113,6 +113,7 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
     def __init__(self, parent: QWidget | None = None, *, headline: str = "") -> None:
         super().__init__(parent)
         self._items: list[_DrawerItem] = []
+        self._footer: QWidget | None = None
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._lay = QVBoxLayout(self)
@@ -139,8 +140,12 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
         self._headline.setStyleSheet(f"color: {c}; padding: 8px 16px;")
 
     def _insert(self, widget: QWidget) -> None:
-        # Always before the trailing stretch (the last layout item).
-        self._lay.insertWidget(self._lay.count() - 1, widget)
+        # Before the trailing stretch; the footer (if any) sits after it, so
+        # step past the footer too when present.
+        insert_at = self._lay.count() - 1
+        if self._footer is not None:
+            insert_at -= 1
+        self._lay.insertWidget(insert_at, widget)
 
     def add_destination(self, label: str, *, icon: str = "",
                         active_icon: str = "") -> _DrawerItem:
@@ -178,6 +183,36 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
     def add_widget(self, widget: QWidget) -> None:
         """Add an arbitrary widget (does not count as a destination)."""
         self._insert(widget)
+
+    def set_width(self, width: int) -> None:
+        """Override the drawer's container width (Flutter ``Drawer.width``)."""
+        self.setFixedWidth(width)
+
+    def set_footer(self, widget: QWidget) -> None:
+        """Pin a widget to the drawer's bottom, below the destinations (Flutter
+        ``NavigationDrawer.footer``). Replaces any previous footer."""
+        if self._footer is not None:
+            self._footer.setParent(None)
+        self._footer = widget
+        # After the trailing stretch so it sits at the very bottom.
+        self._lay.addWidget(widget)
+
+    # -- selection (Flutter ``selectedIndex`` / ``onDestinationSelected``) ---
+
+    @property
+    def selected_index(self) -> int:
+        """Index of the active destination among destinations only, or ``-1``."""
+        return self._group.checkedId()
+
+    @selected_index.setter
+    def selected_index(self, index: int) -> None:
+        self.set_selected_index(index)
+
+    def set_selected_index(self, index: int) -> None:
+        """Programmatically select the destination at ``index``."""
+        button = self._group.button(index)
+        if button is not None:
+            button.setChecked(True)
 
     def changeEvent(self, event) -> None:  # noqa: N802
         super().changeEvent(event)

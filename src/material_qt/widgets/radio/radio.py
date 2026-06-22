@@ -38,10 +38,18 @@ class MdRadio(MaterialWidgetMixin, QAbstractButton):
         parent: QWidget | None = None,
         *,
         checked: bool = False,
+        toggleable: bool = False,
+        label: str | None = None,
     ) -> None:
         super().__init__(parent)
         self.setCheckable(True)
         self.setAutoExclusive(True)
+        # toggleable: clicking the already-selected radio deselects it (Material
+        # ``toggleable``). autoExclusive normally blocks this, so the click is
+        # intercepted in nextCheckState().
+        self._toggleable = bool(toggleable)
+        if label is not None:
+            self.setAccessibleName(label)
         self._dot_t = 1.0 if checked else 0.0
         # One persistent animation, reused per toggle (avoids stale C++ object
         # on repeated clicks once an animation has finished).
@@ -79,6 +87,68 @@ class MdRadio(MaterialWidgetMixin, QAbstractButton):
     def _set_dot_t(self, value) -> None:
         self._dot_t = float(value)
         self.update()
+
+    # -- properties --------------------------------------------------------
+
+    @property
+    def toggleable(self) -> bool:
+        """Whether clicking the selected radio deselects it (Material ``toggleable``)."""
+        return self._toggleable
+
+    def set_toggleable(self, value: bool) -> None:
+        self._toggleable = bool(value)
+
+    @property
+    def label(self) -> str:
+        """Accessible name (Material ``semanticLabel``)."""
+        return self.accessibleName()
+
+    def set_label(self, label: str | None) -> None:
+        self.setAccessibleName(label or "")
+
+    # -- toggleable (deselect-on-click) ------------------------------------
+
+    def _run_with_exclusivity_off(self, fn) -> None:
+        """Run ``fn`` with exclusivity temporarily disabled.
+
+        Both ``QButtonGroup`` exclusivity and ``autoExclusive`` block unchecking
+        the currently-selected button (and skip ``clicked``/``toggled``). Clearing
+        the relevant guard lets Qt's own click machinery perform the deselect and
+        emit the standard signals.
+        """
+        grp = self.group()
+        if grp is not None and grp.exclusive():
+            grp.setExclusive(False)
+            try:
+                fn()
+            finally:
+                grp.setExclusive(True)
+        else:
+            self.setAutoExclusive(False)
+            try:
+                fn()
+            finally:
+                self.setAutoExclusive(True)
+
+    def click(self) -> None:
+        """Programmatic click; deselects when toggleable and already selected."""
+        if self._toggleable and self.isChecked():
+            self._run_with_exclusivity_off(lambda: super(MdRadio, self).click())
+            return
+        super().click()
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        """GUI click; deselects when toggleable and already selected."""
+        if (
+            self._toggleable
+            and self.isChecked()
+            and self.hitButton(event.position().toPoint())
+        ):
+            self._run_with_exclusivity_off(
+                lambda: super(MdRadio, self).mouseReleaseEvent(event)
+            )
+            return
+        super().mouseReleaseEvent(event)
 
     # -- sizing ------------------------------------------------------------
 

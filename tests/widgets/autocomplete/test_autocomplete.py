@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from PySide6.QtWidgets import QApplication
+
 from material_qt.widgets.autocomplete import (
     MdAutocomplete,
     MdFilledAutocomplete,
@@ -115,6 +117,62 @@ def test_top_match_auto_highlighted(qtbot):
     assert a._menu._highlight == 0
     assert a._menu.activate_highlighted() is True
     assert picked == ["Apple"]
+
+
+def test_popup_shrinks_as_matches_reduce(qtbot):
+    # Regression: as filtering narrows the matches, the popup must shrink — the
+    # inner QScrollArea's default sizeHint ignores content, so the height is set
+    # explicitly from the item count each open.
+    a = MdAutocomplete(
+        options=["Apple", "Apricot", "Avocado", "Banana", "Mango", "Orange"])
+    qtbot.addWidget(a)
+    a._on_text_edited("a")          # many matches
+    tall = a._menu.height()
+    a._on_text_edited("man")        # one match (Mango)
+    short = a._menu.height()
+    assert len(a._menu._items) == 1
+    assert short < tall
+
+
+def test_mouse_click_on_row_selects(qtbot):
+    # Regression: clicking a row used to lose to a focus-out close that fired
+    # before the row's mouse-release. A click must set the text and emit.
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    a = MdAutocomplete(options=["Apple", "Apricot"])
+    qtbot.addWidget(a)
+    picked = []
+    a.selected.connect(picked.append)
+    a._on_text_edited("Ap")
+    row = a._menu._items[0]
+    center = QPointF(row.rect().center())
+    for et in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease):
+        QApplication.sendEvent(row, QMouseEvent(
+            et, center, Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier))
+    assert picked == ["Apple"]
+    assert a.text() == "Apple"
+    assert a._menu.isHidden()
+
+
+def test_outside_press_dismisses_popup(qtbot):
+    # The non-grabbing popup self-dismisses on a press outside its frame.
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+
+    a = MdAutocomplete(options=["Apple", "Apricot"])
+    qtbot.addWidget(a)
+    a._on_text_edited("Ap")
+    menu = a._menu
+    assert not menu.isHidden()
+    # A press far outside the popup frame closes it (app-wide event filter).
+    far = QPointF(menu.frameGeometry().right() + 500,
+                  menu.frameGeometry().bottom() + 500)
+    QApplication.sendEvent(menu, QMouseEvent(
+        QEvent.Type.MouseButtonPress, far, far, Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+    assert menu.isHidden()
 
 
 def test_keyboard_navigation_and_activate(qtbot):

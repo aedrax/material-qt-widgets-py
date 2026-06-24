@@ -15,9 +15,11 @@ its items scroll inside a :class:`QScrollArea`.
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QFontMetrics, QPainter
 from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QApplication,
     QFrame,
     QScrollArea,
     QSizePolicy,
@@ -38,6 +40,7 @@ _PAD = 12
 _ICON = 24
 _GAP = 12
 _SHADOW_MARGIN = 14
+_PANEL_V_PAD = 8  # the panel layout's top/bottom content margin
 
 
 class MdMenuItem(MaterialWidgetMixin, QWidget):
@@ -295,6 +298,8 @@ class MdMenu(QWidget):
         self._items: list[MdMenuItem] = []
         self._max_height = int(max_height)
         self._highlight = -1  # index of the keyboard-highlighted item
+        # Non-grabbing popups self-dismiss on an outside press via an app filter.
+        self._app_filter_on = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
@@ -308,6 +313,11 @@ class MdMenu(QWidget):
         # The panel scrolls when its content exceeds ``max_height``.
         self._scroll = QScrollArea()
         self._scroll.setWidgetResizable(True)
+        # Track the panel's content size so the popup shrinks as a re-filter
+        # leaves fewer items (default AdjustIgnored keeps a fixed sizeHint).
+        self._scroll.setSizeAdjustPolicy(
+            QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents
+        )
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
@@ -349,14 +359,18 @@ class MdMenu(QWidget):
         ``side="bottom"`` (default) anchors below the trigger, left-aligned;
         ``side="right"`` anchors to the trigger's right edge (used by submenus).
         """
-        # Cap the popup height (and let the panel scroll past ``max_height``).
-        # ``setMaximumHeight`` — not ``setFixedHeight`` — so a later re-filter
-        # with fewer items can shrink the menu again.
+        # Size the popup to its current content. The inner QScrollArea's
+        # sizeHint doesn't reliably shrink an already-shown window, so set the
+        # height explicitly from the item count each open (so a re-filter with
+        # fewer items shrinks the popup); the panel scrolls past ``max_height``.
+        content_h = len(self._items) * _ITEM_H + 2 * _PANEL_V_PAD
         if self._max_height > 0:
             self.setMaximumHeight(self._max_height + 2 * _SHADOW_MARGIN)
+            content_h = min(content_h, self._max_height)
         else:
             self.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX (uncapped)
         self.adjustSize()
+        self.resize(self.width(), content_h + 2 * _SHADOW_MARGIN)
 
         if side == "right":
             corner = anchor.mapToGlobal(anchor.rect().topRight())
@@ -367,6 +381,34 @@ class MdMenu(QWidget):
         self.show()
         if self._grabs_focus:
             self.setFocus()
+        elif not self._app_filter_on:
+            # A grabbing Qt.Popup dismisses itself on an outside click; a
+            # non-grabbing Tool popup does not, so watch app-wide presses and
+            # close on any that land outside us. This (not the owning field's
+            # focus-out) is what dismisses the popup — a focus-out close races
+            # the row's mouse-release and would swallow click-to-select.
+            QApplication.instance().installEventFilter(self)
+            self._app_filter_on = True
+
+    def _remove_app_filter(self) -> None:
+        if self._app_filter_on:
+            QApplication.instance().removeEventFilter(self)
+            self._app_filter_on = False
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        self._remove_app_filter()
+        super().hideEvent(event)
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        # App-wide while a non-grabbing popup is open: an outside press closes.
+        if (
+            not self._grabs_focus
+            and not self.isHidden()
+            and event.type() == QEvent.Type.MouseButtonPress
+            and not self.frameGeometry().contains(event.globalPosition().toPoint())
+        ):
+            self.close()
+        return False  # never consume — let the press reach its target
 
     # -- keyboard navigation ----------------------------------------------
     #

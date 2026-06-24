@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
 from ..field import FieldVariant, MdField
@@ -179,12 +179,9 @@ class _MdAutocomplete(QWidget):
             if key == Qt.Key.Key_Escape:
                 self._close_menu()
                 return True
-        elif etype == QEvent.Type.FocusOut:
-            # Defer one event-loop turn: a click that lands on a menu row first
-            # deactivates the field's window, and closing synchronously would
-            # swallow the row's mouse-release before it can select. The item's
-            # own selection closes the menu; this only handles "clicked away".
-            QTimer.singleShot(0, self._close_menu)
+        # The popup self-dismisses on an outside press (see MdMenu); we do NOT
+        # close on the field's focus-out, which would race a row click's
+        # mouse-release and swallow click-to-select.
         return False
 
 

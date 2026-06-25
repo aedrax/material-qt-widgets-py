@@ -32,7 +32,7 @@ def test_text_changed_signal(qtbot):
     a = MdAutocomplete(options=["Apple", "Apricot"])
     qtbot.addWidget(a)
     seen = []
-    a.text_changed.connect(seen.append)
+    a.textChanged.connect(seen.append)
     a._on_text_edited("Ap")
     assert seen == ["Ap"]
 

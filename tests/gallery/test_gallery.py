@@ -26,6 +26,32 @@ def test_every_component_has_metadata(qtbot):
         assert label in COMPONENT_META
 
 
+def test_search_bar_page_opens_view_and_filters(qtbot):
+    # Builders run at construction, but interactive callbacks wired *inside* a
+    # builder (e.g. the search bar's open_view) only fire on use — exercise that
+    # path so a bad signal name / wiring raises here, not just in the live app.
+    from PySide6.QtWidgets import QMainWindow
+
+    from material_qt.gallery import gallery
+    from material_qt.widgets.searchbar import MdSearchBar, MdSearchView
+
+    win = QMainWindow()
+    qtbot.addWidget(win)
+    win.setCentralWidget(gallery._build_search_bar())
+    win.resize(700, 500)
+    win.show()
+    qtbot.waitExposed(win)
+
+    bar = win.findChild(MdSearchBar)
+    assert bar is not None
+    bar.clicked.emit()  # opens the full-screen search view (the wired callback)
+    view = win.findChild(MdSearchView)
+    assert view is not None and not view.isHidden()
+    # The callbacks open_view wired must fire without error.
+    view.textChanged.emit("man")
+    view.suggestionSelected.emit("Mango")
+
+
 def test_theme_toggle_flips_on_first_click(qtbot):
     ThemeManager.instance().set_mode(ThemeMode.LIGHT)
     w = GalleryWindow()

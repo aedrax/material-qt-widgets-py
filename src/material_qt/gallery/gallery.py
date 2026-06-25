@@ -1071,7 +1071,7 @@ def _build_search_bar() -> QWidget:
     def open_view() -> None:
         view = MdSearchView(page.window(), view_hint_text="Search fruit")
         view.set_suggestions(fruits)
-        view.text_changed.connect(
+        view.textChanged.connect(
             lambda q: view.set_suggestions(
                 [f for f in fruits if q.lower() in f.lower()]))
         view.suggestionSelected.connect(lambda v: status.setText(f"Picked: {v}"))

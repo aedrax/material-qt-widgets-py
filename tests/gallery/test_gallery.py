@@ -52,6 +52,41 @@ def test_search_bar_page_opens_view_and_filters(qtbot):
     view.suggestionSelected.emit("Mango")
 
 
+def test_clicking_each_page_trigger_does_not_raise(qtbot):
+    # Exercise every page's interactive triggers (buttons + search bars) so a
+    # bad callback wiring inside any builder raises here, not in the live app.
+    # Buttons fire even while their page is off-stack; any modal a click opens is
+    # parented to the window, so dismiss overlays between pages to avoid stacking.
+    from PySide6.QtWidgets import QAbstractButton, QApplication
+
+    from material_qt.core.modal_overlay import ModalOverlay
+    from material_qt.widgets.searchbar import MdSearchBar
+
+    app = QApplication.instance()
+    w = GalleryWindow()
+    qtbot.addWidget(w)
+    w.resize(1000, 700)
+    w.show()
+    qtbot.waitExposed(w)
+
+    for i in range(w._stack.count()):
+        page = w._stack.widget(i)
+        for btn in page.findChildren(QAbstractButton):
+            if btn.isEnabled():
+                btn.click()
+                app.processEvents()
+        for sbar in page.findChildren(MdSearchBar):
+            sbar.clicked.emit()
+            app.processEvents()
+        # Close any overlay this page's triggers opened so they don't stack.
+        for overlay in w.findChildren(ModalOverlay):
+            if not overlay.isHidden():
+                overlay._close()
+        app.processEvents()
+
+    w.grab()  # still paints after all that interaction
+
+
 def test_theme_toggle_flips_on_first_click(qtbot):
     ThemeManager.instance().set_mode(ThemeMode.LIGHT)
     w = GalleryWindow()

@@ -2,10 +2,43 @@
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QLabel
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from material_qt import core
 from material_qt.widgets.carousel import MdCarousel, MdWeightedCarousel
 from material_qt.widgets.carousel.carousel import weighted_geometry
+
+
+def test_wheel_reaches_the_end_at_a_narrow_width(qtbot):
+    # Regression: at a width too narrow to bring the last item's leading edge to
+    # the viewport's left, wheel notches must still scroll to the very end (the
+    # max scroll). The step accumulates in _target_index, not the lagging bar.
+    core.motion.MOTION_ENABLED = False  # settle each scroll synchronously
+    try:
+        host = QWidget()
+        lay = QVBoxLayout(host)
+        c = MdCarousel()
+        for n in ["a", "b", "c", "d", "e", "f"]:
+            c.add_tile(n)
+        lay.addWidget(c)
+        qtbot.addWidget(host)
+        host.resize(420, 240)
+        host.show()
+        qtbot.waitExposed(host)
+        bar = c._scroll.horizontalScrollBar()
+        assert bar.maximum() > 0  # content overflows the narrow viewport
+        # The last item's leading edge is beyond the max scroll (the symptom).
+        assert c._positions[-1] > bar.maximum()
+        # Drive the wheel-down path repeatedly (what eventFilter calls).
+        for _ in range(len(c._positions) + 2):
+            c._scroll_to_index(c._target_index + 1)
+        assert bar.value() == bar.maximum()  # reached the end, not stalled short
+        # And wheel-up returns all the way to the start.
+        for _ in range(len(c._positions) + 2):
+            c._scroll_to_index(c._target_index - 1)
+        assert bar.value() == bar.minimum()
+    finally:
+        core.motion.MOTION_ENABLED = True
 
 
 def test_add_tile_and_item_count(qtbot):

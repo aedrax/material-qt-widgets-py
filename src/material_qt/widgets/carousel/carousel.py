@@ -218,6 +218,11 @@ class MdCarousel(QWidget):
         self._item_height = int(item_height)
         self._item_snapping = bool(item_snapping)
         self._padding = int(padding)
+        self._scroll_anim = None
+        # The wheel steps this accumulator (not the bar-derived ``_index``, which
+        # lags behind the in-flight animation) so rapid notches reach the end.
+        self._target_index = 0
+        self._wheel_scrolling = False
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -315,6 +320,20 @@ class MdCarousel(QWidget):
         if idx != self._index:
             self._index = idx
             self.indexChanged.emit(idx)
+        # Keep the wheel accumulator in sync with drag/swipe scrolling — but not
+        # mid-wheel-animation, where the live bar lags the intended target.
+        if not self._wheel_scrolling:
+            self._target_index = idx
+
+    def _stop_scroll_anim(self) -> None:
+        # animate() uses DeleteWhenStopped, so a finished animation's C++ object
+        # may already be gone even though we still hold the wrapper — guard it.
+        if self._scroll_anim is not None:
+            try:
+                self._scroll_anim.stop()
+            except RuntimeError:
+                pass
+            self._scroll_anim = None
 
     def _scroll_to_index(self, index: int) -> None:
         if not self._positions:
@@ -322,14 +341,28 @@ class MdCarousel(QWidget):
         bar = self._scroll.horizontalScrollBar()
         index = max(0, min(index, len(self._positions) - 1))
         target = int(max(bar.minimum(), min(bar.maximum(), self._positions[index])))
-        animate(bar, b"value", target, duration=Duration.SHORT4,
-                easing=Easing.EMPHASIZED, start=bar.value())
+        # Settle the accumulator on the index this scroll actually lands on. Near
+        # the end several leading edges clamp to the same max scroll, so this caps
+        # cleanly (no runaway that would need unwinding to scroll back).
+        self._target_index = self._nearest_index(target)
+        # Stop any in-flight scroll animation first: each wheel notch otherwise
+        # starts a fresh animation on bar.value, and overlapping ones fight and
+        # settle short of the end (the drag path, via QScroller, is unaffected).
+        self._wheel_scrolling = True
+        self._stop_scroll_anim()
+        self._scroll_anim = animate(bar, b"value", target, duration=Duration.SHORT4,
+                                    easing=Easing.EMPHASIZED, start=bar.value(),
+                                    on_finished=self._clear_scroll_anim)
+
+    def _clear_scroll_anim(self) -> None:
+        self._scroll_anim = None
+        self._wheel_scrolling = False
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
         if obj is self._scroll.viewport() and event.type() == QEvent.Type.Wheel:
             delta = event.angleDelta().y() or event.angleDelta().x()
             step = 1 if delta < 0 else -1  # wheel-down advances to the next item
-            self._scroll_to_index(self._index + step)
+            self._scroll_to_index(self._target_index + step)
             return True
         return False
 

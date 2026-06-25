@@ -22,6 +22,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -76,6 +77,11 @@ class _HeaderCell(QLabel):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         align = Qt.AlignmentFlag.AlignRight if numeric else Qt.AlignmentFlag.AlignLeft
         self.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
+        # Ignore the label's own text width so every column gets an equal,
+        # stretch-driven share — identical in the header and every data row, so
+        # columns stay aligned even when the view is narrow (long text clips
+        # rather than shoving the column over).
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
 
     def set_sort_indicator(self, state: str) -> None:
         """``state`` is 'asc', 'desc', or '' (none)."""
@@ -214,6 +220,9 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
         lbl.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
         color = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
         lbl.setStyleSheet(f"color: {color};")
+        # Equal, stretch-driven column widths (see _HeaderCell) so data cells
+        # line up with the header regardless of text length or view width.
+        lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         return lbl
 
     def _make_row(self, height: int) -> tuple[QWidget, QHBoxLayout]:

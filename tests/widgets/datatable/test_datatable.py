@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
+
 from material_qt.widgets.datatable import MdDataTable
 
 
@@ -9,6 +11,43 @@ def _table(qtbot, **kw) -> MdDataTable:
     t = MdDataTable(**kw)
     qtbot.addWidget(t)
     return t
+
+
+def test_columns_stay_aligned_at_narrow_width(qtbot):
+    # Regression: rows with longer text used to push their columns past the
+    # header's. Every column must share an identical, stretch-driven width, so
+    # each data row's cell x-positions match the header's even when narrow.
+    host = QWidget()
+    lay = QVBoxLayout(host)
+    t = MdDataTable()
+    t.set_columns(["Dessert", "Calories", "Protein"], numeric=[False, True, True])
+    t.set_rows([
+        ["Frozen yogurt", "159", "4.0"],
+        ["Ice cream sandwich is long", "237", "4.3"],
+        ["Eclair", "262", "6.0"],
+    ])
+    lay.addWidget(t)
+    qtbot.addWidget(host)
+    host.resize(240, 300)  # narrow enough that long text would overflow
+    host.show()
+    qtbot.waitExposed(host)
+
+    def xs(widget) -> list[int]:
+        return [c.mapTo(t, c.rect().topLeft()).x()
+                for c in widget.findChildren(QLabel)]
+
+    header_xs = [c.mapTo(t, c.rect().topLeft()).x() for c in t._header_cells]
+    header_row = t._header_cells[0].parentWidget()
+    data_rows = [
+        t._lay.itemAt(i).widget()
+        for i in range(t._lay.count())
+        if t._lay.itemAt(i).widget() is not None
+        and t._lay.itemAt(i).widget() is not header_row
+        and t._lay.itemAt(i).widget().findChildren(QLabel)
+    ]
+    assert len(data_rows) == 3
+    for row in data_rows:
+        assert xs(row) == header_xs
 
 
 def test_columns_and_rows(qtbot):

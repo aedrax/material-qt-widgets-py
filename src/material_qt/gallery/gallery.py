@@ -46,7 +46,7 @@ from ..widgets.expansionpanel import MdExpansionPanel
 from ..widgets.fabmenu import MdFabMenu
 from ..widgets.loadingindicator import MdLoadingIndicator
 from ..widgets.toolbar import MdToolbar
-from ..widgets.searchbar import MdSearchBar, MdSearchView
+from ..widgets.searchbar import MdSearchBar
 from ..widgets.scrollbar import (
     disable_horizontal_scroll,
     install_material_scrollbars,
@@ -1062,22 +1062,46 @@ def _build_search_bar() -> QWidget:
     page = _page()
     lay = page.layout()
     lay.addWidget(_section("Search bar"))
-    bar = MdSearchBar(placeholder="Search your library", trailing_icon="mic")
-    status = QLabel("(type and press Enter, or click to open full-screen)")
+    bar = MdSearchBar(placeholder="Search fruit", trailing_icon="mic")
+    status = QLabel("(type to see suggestions)")
     bar.submitted.connect(lambda q: status.setText(f"Searched: {q}"))
+    bar.trailingClicked.connect(lambda: status.setText("Voice search…"))
 
-    fruits = ["Apple", "Apricot", "Banana", "Blueberry", "Cherry", "Mango"]
+    fruits = ["Apple", "Apricot", "Avocado", "Banana", "Blueberry",
+              "Cherry", "Mango", "Orange"]
 
-    def open_view() -> None:
-        view = MdSearchView(page.window(), view_hint_text="Search fruit")
-        view.set_suggestions(fruits)
-        view.textChanged.connect(
-            lambda q: view.set_suggestions(
-                [f for f in fruits if q.lower() in f.lower()]))
-        view.suggestionSelected.connect(lambda v: status.setText(f"Picked: {v}"))
-        view.open()
+    # Demo glue (not a widget feature): show a suggestion dropdown anchored under
+    # the bar — the desktop SearchAnchor.bar behavior — reusing the non-grabbing
+    # MdMenu (which owns the sizing / outside-press-dismiss / click-select). A
+    # real app would drive this from a SearchController; the full-screen variant
+    # is MdSearchView.
+    menu: dict[str, MdMenu | None] = {"m": None}
 
-    bar.clicked.connect(open_view)
+    def pick(text: str) -> None:
+        bar.set_text(text)
+        status.setText(f"Searched: {text}")
+        if menu["m"] is not None:
+            menu["m"].close()
+
+    def show_suggestions() -> None:
+        q = bar.text().strip().lower()
+        matches = [f for f in fruits if q in f.lower()] if q else fruits
+        if not matches:
+            if menu["m"] is not None:
+                menu["m"].close()
+            return
+        m = menu["m"]
+        if m is None:
+            m = menu["m"] = MdMenu(bar, max_height=240, grabs_focus=False)
+            m.selected.connect(pick)
+        m.clear()
+        for f in matches:
+            m.add_item(MdMenuItem(f))
+        m.setFixedWidth(bar.width())
+        m.open_at(bar)
+
+    bar.clicked.connect(show_suggestions)
+    bar.textChanged.connect(lambda *_: show_suggestions())
     lay.addWidget(bar)
     lay.addWidget(status)
     lay.addStretch(1)

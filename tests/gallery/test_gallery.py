@@ -26,14 +26,16 @@ def test_every_component_has_metadata(qtbot):
         assert label in COMPONENT_META
 
 
-def test_search_bar_page_opens_view_and_filters(qtbot):
-    # Builders run at construction, but interactive callbacks wired *inside* a
-    # builder (e.g. the search bar's open_view) only fire on use — exercise that
-    # path so a bad signal name / wiring raises here, not just in the live app.
+def test_search_bar_page_shows_dropdown_and_mic_is_independent(qtbot):
+    # Builders run at construction, but callbacks wired *inside* a builder only
+    # fire on use. Exercise the search demo: clicking the bar shows an anchored
+    # suggestion dropdown (not a full-screen view), the mic fires its own action
+    # without opening the dropdown, and picking a suggestion fills the bar.
     from PySide6.QtWidgets import QMainWindow
 
     from material_qt.gallery import gallery
-    from material_qt.widgets.searchbar import MdSearchBar, MdSearchView
+    from material_qt.widgets.menu import MdMenu
+    from material_qt.widgets.searchbar import MdSearchBar
 
     win = QMainWindow()
     qtbot.addWidget(win)
@@ -43,13 +45,27 @@ def test_search_bar_page_opens_view_and_filters(qtbot):
     qtbot.waitExposed(win)
 
     bar = win.findChild(MdSearchBar)
-    assert bar is not None
-    bar.clicked.emit()  # opens the full-screen search view (the wired callback)
-    view = win.findChild(MdSearchView)
-    assert view is not None and not view.isHidden()
-    # The callbacks open_view wired must fire without error.
-    view.textChanged.emit("man")
-    view.suggestionSelected.emit("Mango")
+    assert bar is not None and bar._trailing is not None
+
+    # Clicking the bar opens an anchored suggestion dropdown (no full-screen view).
+    bar.clicked.emit()
+    menus = win.findChildren(MdMenu)  # the MdMenu is a QObject child of the bar
+    assert menus, "clicking the bar should open a suggestion dropdown"
+    menu = menus[0]
+    assert not menu.isHidden()
+    assert [it.text for it in menu._items]  # populated with suggestions
+
+    # The mic is its own action: it fires trailingClicked, not the bar's clicked.
+    fired = {"trailing": 0, "clicked": 0}
+    bar.trailingClicked.connect(lambda: fired.__setitem__("trailing", fired["trailing"] + 1))
+    bar.clicked.connect(lambda: fired.__setitem__("clicked", fired["clicked"] + 1))
+    bar._trailing.click()
+    assert fired["trailing"] == 1 and fired["clicked"] == 0
+
+    # Picking a suggestion fills the bar.
+    first = menu._items[0].text
+    menu._items[0].triggered.emit()
+    assert bar.text() == first
 
 
 def test_clicking_each_page_trigger_does_not_raise(qtbot):
@@ -78,10 +94,17 @@ def test_clicking_each_page_trigger_does_not_raise(qtbot):
         for sbar in page.findChildren(MdSearchBar):
             sbar.clicked.emit()
             app.processEvents()
-        # Close any overlay this page's triggers opened so they don't stack.
+        # Close anything a trigger opened so it doesn't bleed into the next page:
+        # modal overlays (dialogs/pickers/sheets) and non-grabbing popups (the
+        # search/menu dropdowns, which are top-level windows, not ModalOverlays).
+        from material_qt.widgets.menu import MdMenu
+
         for overlay in w.findChildren(ModalOverlay):
             if not overlay.isHidden():
                 overlay._close()
+        for popup in QApplication.topLevelWidgets():
+            if isinstance(popup, MdMenu) and not popup.isHidden():
+                popup.close()
         app.processEvents()
 
     w.grab()  # still paints after all that interaction

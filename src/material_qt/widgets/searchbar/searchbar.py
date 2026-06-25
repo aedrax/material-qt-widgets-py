@@ -22,6 +22,7 @@ from ...tokens.shape import ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..icon.icon import MdIcon
+from ..iconbutton import MdIconButton
 
 _HEIGHT = 56
 _PAD = 16
@@ -42,6 +43,7 @@ class MdSearchBar(MaterialWidgetMixin, QWidget):
     textChanged = Signal(str)  # noqa: N815  (Qt-style signal name)
     submitted = Signal(str)
     clicked = Signal()
+    trailingClicked = Signal()  # noqa: N815  (the trailing action icon was tapped)
 
     def __init__(
         self,
@@ -86,10 +88,14 @@ class MdSearchBar(MaterialWidgetMixin, QWidget):
         self._edit.installEventFilter(self)
         lay.addWidget(self._edit, 1)
 
+        # The trailing icon is an interactive action (Flutter's trailing widgets),
+        # not part of the bar's tap target: it's an MdIconButton, which consumes
+        # its own press so tapping it fires ``trailingClicked`` — not ``clicked``.
+        self._trailing: MdIconButton | None = None
         if trailing_icon:
-            trail = MdIcon(trailing_icon, color_role=ColorRole.ON_SURFACE_VARIANT)
-            trail.set_size(24)
-            lay.addWidget(trail, 0)
+            self._trailing = MdIconButton(trailing_icon)
+            self._trailing.clicked.connect(self.trailingClicked.emit)
+            lay.addWidget(self._trailing, 0)
 
         self._restyle()
         ThemeManager.instance().themeChanged.connect(self._restyle)

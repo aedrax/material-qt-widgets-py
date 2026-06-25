@@ -20,7 +20,7 @@ def test_trailing_click_signal(qtbot):
     sb = MdSplitButton("Save")
     qtbot.addWidget(sb)
     seen = []
-    sb.trailing_clicked.connect(lambda: seen.append(1))
+    sb.trailingClicked.connect(lambda: seen.append(1))
     sb._trailing.click()
     assert seen == [1]
 

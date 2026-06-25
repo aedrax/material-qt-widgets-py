@@ -239,7 +239,7 @@ class MdSplitButton(QWidget):
     """A Material split button: leading action + trailing dropdown."""
 
     clicked = Signal()
-    trailing_clicked = Signal()
+    trailingClicked = Signal()  # noqa: N815  (Qt-style signal name)
 
     def __init__(
         self,
@@ -278,7 +278,7 @@ class MdSplitButton(QWidget):
         self._menu = menu
 
     def _on_trailing(self) -> None:
-        self.trailing_clicked.emit()
+        self.trailingClicked.emit()
         if self._menu is not None:
             self._menu.open_at(self._trailing)
 

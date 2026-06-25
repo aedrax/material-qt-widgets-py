@@ -14,7 +14,7 @@ Properties (idiomatic QObject form):
 * ``initial_value`` — initial field text.
 * ``selected(value)`` Signal — emits the chosen *option object* (Flutter
   ``onSelected``).
-* ``text_changed(str)`` Signal — emits the field text on every keystroke.
+* ``textChanged(str)`` Signal — emits the field text on every keystroke.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class _MdAutocomplete(QWidget):
     VARIANT = FieldVariant.FILLED
 
     selected = Signal(object)  # emits the chosen option object
-    text_changed = Signal(str)  # noqa: N815  (Qt-style signal name)
+    textChanged = Signal(str)  # noqa: N815  (Qt-style signal name)
 
     def __init__(
         self,
@@ -113,7 +113,7 @@ class _MdAutocomplete(QWidget):
 
     def _on_text_edited(self, text: str) -> None:
         self._field.set_populated(bool(text))
-        self.text_changed.emit(text)
+        self.textChanged.emit(text)
         matches = self.matching_options(text)
         if matches:
             self._show_menu(matches)

@@ -84,7 +84,7 @@ from ..widgets.iconbutton import (
 )
 from ..widgets.item import MdItem
 from ..widgets.list import MdList, MdListItem
-from ..widgets.menu import MdMenu, MdMenuItem
+from ..widgets.menu import DropdownController, MdMenu, MdMenuItem
 from ..widgets.navigationbar import MdNavigationBar
 from ..widgets.navigationdrawer import MdNavigationDrawer
 from ..widgets.navigationrail import MdNavigationRail
@@ -1070,35 +1070,17 @@ def _build_search_bar() -> QWidget:
     fruits = ["Apple", "Apricot", "Avocado", "Banana", "Blueberry",
               "Cherry", "Mango", "Orange"]
 
-    # Demo glue (not a widget feature): show a suggestion dropdown anchored under
-    # the bar — the desktop SearchAnchor.bar behavior — reusing the non-grabbing
-    # MdMenu (which owns the sizing / outside-press-dismiss / click-select). A
-    # real app would drive this from a SearchController; the full-screen variant
-    # is MdSearchView.
-    menu: dict[str, MdMenu | None] = {"m": None}
-
-    def pick(text: str) -> None:
-        bar.set_text(text)
-        status.setText(f"Searched: {text}")
-        if menu["m"] is not None:
-            menu["m"].close()
+    # Show a suggestion dropdown anchored under the bar (the desktop
+    # SearchAnchor.bar behavior) via the shared DropdownController; the
+    # full-screen variant is MdSearchView.
+    dropdown = DropdownController(
+        bar, key_source=bar.line_edit, max_height=240, grabs_focus=False)
+    dropdown.selected.connect(lambda text: (bar.set_text(text),
+                                            status.setText(f"Searched: {text}")))
 
     def show_suggestions() -> None:
         q = bar.text().strip().lower()
-        matches = [f for f in fruits if q in f.lower()] if q else fruits
-        if not matches:
-            if menu["m"] is not None:
-                menu["m"].close()
-            return
-        m = menu["m"]
-        if m is None:
-            m = menu["m"] = MdMenu(bar, max_height=240, grabs_focus=False)
-            m.selected.connect(pick)
-        m.clear()
-        for f in matches:
-            m.add_item(MdMenuItem(f))
-        m.setFixedWidth(bar.width())
-        m.open_at(bar)
+        dropdown.show([f for f in fruits if q in f.lower()] if q else fruits)
 
     bar.clicked.connect(show_suggestions)
     bar.textChanged.connect(lambda *_: show_suggestions())

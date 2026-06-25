@@ -100,6 +100,11 @@ class MdSearchBar(MaterialWidgetMixin, QWidget):
         self._restyle()
         ThemeManager.instance().themeChanged.connect(self._restyle)
 
+    @property
+    def line_edit(self) -> QLineEdit:
+        """The underlying input (e.g. to drive a suggestions dropdown)."""
+        return self._edit
+
     def text(self) -> str:
         return self._edit.text()
 

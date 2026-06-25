@@ -114,6 +114,18 @@ class MdTooltip(MaterialWidgetMixin, QWidget):
     def _show_tooltip(self) -> None:
         if self._target.isHidden():
             return
+        # Reparent to the target's current top-level window. The tooltip is often
+        # attached before the target is added to its window (e.g. inside a widget
+        # builder), so the parent captured at construction can be stale/wrong —
+        # rebind here so positioning (in window coords) lands correctly and the
+        # tooltip isn't clipped by the target.
+        window = self._target.window()
+        if window is None:
+            return
+        if self.parentWidget() is not window:
+            self.setParent(window)
+            # setParent on a window child resets these widget attributes.
+            self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.adjustSize()
         self._position()
         self.raise_()

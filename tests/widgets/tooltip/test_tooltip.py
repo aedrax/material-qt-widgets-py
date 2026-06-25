@@ -86,3 +86,29 @@ def test_renders(qtbot):
     tip = MdTooltip(btn, "Help text", wait_ms=0)
     tip._show_tooltip()
     tip.grab()
+
+
+def test_reparents_to_window_when_attached_before_parenting(qtbot):
+    # Regression: tooltips are often attached inside a widget builder, before the
+    # target is added to its window (so target.window() is briefly the target
+    # itself). The tooltip must rebind to the real top-level window on show, or
+    # it's parented to — and clipped by — the target and never appears.
+    from PySide6.QtWidgets import QVBoxLayout
+
+    btn = QPushButton("Hover me")  # no parent yet
+    tip = MdTooltip(btn, "Help text", wait_ms=0, show_ms=0)
+    assert tip.parentWidget() is btn  # stale parent captured at construction
+
+    host = QWidget()
+    host.resize(400, 300)
+    QVBoxLayout(host).addWidget(btn)
+    qtbot.addWidget(host)
+    host.show()
+    qtbot.waitExposed(host)
+
+    tip._show_tooltip()
+    assert tip.parentWidget() is host  # rebound to the real window
+    assert not tip.isHidden()
+    # Positioned within the window, not off in the button's coordinate space.
+    assert 0 <= tip.x() <= host.width() - tip.width()
+    assert 0 <= tip.y() <= host.height() - tip.height()

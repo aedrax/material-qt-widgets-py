@@ -21,11 +21,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 
-from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
 from ..field import FieldVariant, MdField
-from ..menu import MdMenu, MdMenuItem
+from ..menu import DropdownController
 
 _DEFAULT_MAX_HEIGHT = 200
 
@@ -53,8 +53,6 @@ class _MdAutocomplete(QWidget):
         super().__init__(parent)
         self._options: list[object] = list(options) if options else []
         self._display_for = display_string_for_option or str
-        self._options_max_height = int(options_max_height)
-        self._menu: MdMenu | None = None
         # Maps the row display text -> option object for the currently open menu.
         self._row_options: dict[str, object] = {}
 
@@ -66,9 +64,16 @@ class _MdAutocomplete(QWidget):
             self._edit.setPlaceholderText(placeholder)
         self._field.set_content(self._edit)
         self._edit.textEdited.connect(self._on_text_edited)
-        # Watch the input for navigation keys / focus-out so the non-grabbing
-        # options popup can be driven without taking the keyboard.
-        self._edit.installEventFilter(self)
+
+        # The shared controller owns the non-grabbing options popup (anchored
+        # under the field, keyboard-forwarded from the input, top-match
+        # auto-highlighted). We map the chosen label back to its option object.
+        self._dropdown = DropdownController(
+            self._field, key_source=self._edit,
+            max_height=int(options_max_height), grabs_focus=False,
+            auto_highlight=True,
+        )
+        self._dropdown.selected.connect(self._on_selected)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -111,78 +116,23 @@ class _MdAutocomplete(QWidget):
         q = query.casefold()
         return [o for o in self._options if q in self._display_for(o).casefold()]
 
+    @property
+    def _menu(self):  # noqa: ANN202  (the controller's popup, for callers/tests)
+        return self._dropdown.menu
+
     def _on_text_edited(self, text: str) -> None:
         self._field.set_populated(bool(text))
         self.textChanged.emit(text)
         matches = self.matching_options(text)
-        if matches:
-            self._show_menu(matches)
-        else:
-            self._close_menu()
-
-    def _ensure_menu(self) -> MdMenu:
-        if self._menu is None:
-            # A non-grabbing popup: the keyboard stays on the line edit so the
-            # user can keep typing while the options surface is shown.
-            self._menu = MdMenu(
-                self, max_height=self._options_max_height, grabs_focus=False
-            )
-            self._menu.selected.connect(self._on_selected)
-        return self._menu
-
-    def _close_menu(self) -> None:
-        if self._menu is not None:
-            self._menu.close()
-
-    def _show_menu(self, options: list[object]) -> None:
-        # Reuse one persistent popup; rebuild its rows in place each keystroke
-        # so it resizes to the current matches without leaking windows.
-        menu = self._ensure_menu()
-        menu.clear()
-        self._row_options = {}
-        for opt in options:
-            label = self._display_for(opt)
-            self._row_options[label] = opt
-            menu.add_item(MdMenuItem(label))
-        menu.setFixedWidth(self._field.width())
-        menu.open_at(self._field)
-        # Auto-highlight the top match so Enter commits it without arrowing.
-        menu.highlight_first()
+        # Rebuild the label -> option map and (re)open the popup; show([]) closes.
+        self._row_options = {self._display_for(o): o for o in matches}
+        self._dropdown.show(self._row_options)
 
     def _on_selected(self, label: str) -> None:
         option = self._row_options.get(label)
         self.set_text(label)
-        self._close_menu()
         if option is not None:
             self.selected.emit(option)
-
-    # -- keyboard ----------------------------------------------------------
-
-    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
-        if obj is not self._edit:
-            return False
-        etype = event.type()
-        if (
-            etype == QEvent.Type.KeyPress
-            and self._menu is not None
-            and not self._menu.isHidden()
-        ):
-            key = event.key()
-            if key == Qt.Key.Key_Down:
-                self._menu.highlight_next()
-                return True
-            if key == Qt.Key.Key_Up:
-                self._menu.highlight_prev()
-                return True
-            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-                return self._menu.activate_highlighted()
-            if key == Qt.Key.Key_Escape:
-                self._close_menu()
-                return True
-        # The popup self-dismisses on an outside press (see MdMenu); we do NOT
-        # close on the field's focus-out, which would race a row click's
-        # mouse-release and swallow click-to-select.
-        return False
 
 
 class MdFilledAutocomplete(_MdAutocomplete):

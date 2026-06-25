@@ -14,12 +14,12 @@ editable and typing narrows the open menu (Flutter ``enableFilter``).
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
 from ..field import FieldVariant, MdField
 from ..icon import MdIcon
-from ..menu import MdMenu, MdMenuItem
+from ..menu import DropdownController
 
 _ARROW = 24
 
@@ -52,7 +52,6 @@ class _MdSelect(QWidget):
         self._leading_icon = leading_icon
         self._menu_height = int(menu_height)
         self._enable_filter = bool(enable_filter)
-        self._menu: MdMenu | None = None
 
         self._field = MdField(
             variant=self.VARIANT, label=label, supporting_text=supporting_text
@@ -82,6 +81,17 @@ class _MdSelect(QWidget):
             w.installEventFilter(self)
         self._field.installEventFilter(self)  # also for Resize repositioning
         self._sync_cursor()
+
+        # Shared options popup: grabbing for a plain select (it owns its own
+        # keys), non-grabbing + keyboard-forwarded from the editable display when
+        # filtering. The chosen label maps back to its value in _on_selected.
+        self._dropdown = DropdownController(
+            self._field,
+            key_source=self._display if self._enable_filter else None,
+            max_height=self._menu_height,
+            grabs_focus=not self._enable_filter,
+        )
+        self._dropdown.selected.connect(self._on_selected)
 
         if self._enable_filter:
             self._display.textEdited.connect(self._on_text_edited)
@@ -141,49 +151,21 @@ class _MdSelect(QWidget):
 
     # -- interaction -------------------------------------------------------
 
+    @property
+    def _menu(self):  # noqa: ANN202  (the controller's popup, for callers/tests)
+        return self._dropdown.menu
+
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
         etype = event.type()
         if obj is self._field and etype == QEvent.Type.Resize:
             self._reposition_icons()
         elif etype == QEvent.Type.MouseButtonRelease and self._enabled:
             # When filtering, a click in the editable field shouldn't swallow
-            # the caret placement; just (re)open the menu.
+            # the caret placement; just (re)open the menu. (Navigation keys and
+            # outside-press dismissal are handled by the DropdownController.)
             self._open_menu()
             if not self._enable_filter:
                 return True
-        elif (
-            self._enable_filter
-            and obj is self._display
-            and etype == QEvent.Type.KeyPress
-            and self._menu is not None
-            and not self._menu.isHidden()
-        ):
-            # Forward navigation keys to the (non-grabbing) options popup so the
-            # field keeps the keyboard for typing. Returns True to consume.
-            return self._forward_key(event)
-        elif (
-            self._enable_filter
-            and obj is self._display
-            and etype == QEvent.Type.FocusOut
-        ):
-            # Deferred: a click landing on a menu row first deactivates the
-            # field window; a synchronous close would swallow its mouse-release.
-            QTimer.singleShot(0, self._close_menu)
-        return False
-
-    def _forward_key(self, event: QEvent) -> bool:
-        key = event.key()
-        if key == Qt.Key.Key_Down:
-            self._menu.highlight_next()
-            return True
-        if key == Qt.Key.Key_Up:
-            self._menu.highlight_prev()
-            return True
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            return self._menu.activate_highlighted()
-        if key == Qt.Key.Key_Escape:
-            self._close_menu()
-            return True
         return False
 
     def _reposition_icons(self) -> None:
@@ -196,47 +178,18 @@ class _MdSelect(QWidget):
             self._leading.raise_()
 
     def _on_text_edited(self, text: str) -> None:
-        # Reuse one persistent popup (rebuild rows in place) — never create a
-        # new MdMenu per keystroke.
         self._filter_menu(text)
 
-    def _ensure_menu(self) -> MdMenu:
-        if self._menu is None:
-            grabs = not self._enable_filter
-            self._menu = MdMenu(
-                self, max_height=self._menu_height, grabs_focus=grabs
-            )
-            self._menu.selected.connect(self._on_selected)
-        return self._menu
-
-    def _close_menu(self) -> None:
-        if self._menu is not None:
-            self._menu.close()
-
     def _filter_menu(self, query: str) -> None:
-        menu = self._ensure_menu()
         q = query.casefold()
-        menu.clear()
-        any_match = False
-        for text, _val in self._options:
-            if q in text.casefold():
-                menu.add_item(MdMenuItem(text))
-                any_match = True
-        if not any_match:
-            menu.close()
-            return
-        menu.setFixedWidth(self._field.width())
-        menu.open_at(self._field)
+        self._dropdown.show(
+            [text for text, _val in self._options if q in text.casefold()]
+        )
 
     def _open_menu(self) -> None:
         if not self._options:
             return
-        menu = self._ensure_menu()
-        menu.clear()
-        for text, _val in self._options:
-            menu.add_item(MdMenuItem(text))
-        menu.setFixedWidth(self._field.width())
-        menu.open_at(self._field)
+        self._dropdown.show([text for text, _val in self._options])
 
     def _on_selected(self, text: str) -> None:
         for opt_text, val in self._options:

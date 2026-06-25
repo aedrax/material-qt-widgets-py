@@ -247,3 +247,44 @@ def _press_event(widget):
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
     )
+
+
+def test_empty_and_disabled_cells_have_hover_disabled(qtbot):
+    # Regression: blank (no-date) and out-of-range cells must not show the hover
+    # state layer — the ripple overlay paints independently of paintEvent.
+    host = QWidget()
+    host.resize(500, 560)
+    qtbot.addWidget(host)
+    dp = MdDatePicker(
+        host,
+        initial_date=QDate(2026, 6, 15),
+        first_date=QDate(2026, 6, 10),
+    )
+    empties = [c for c in dp._cells if c._date is None]
+    assert empties  # June has leading blanks (starts mid-week)
+    assert all(not c.ripple._enabled for c in empties)
+    # In-range day cells keep hover; an out-of-range day (June 5) has it off.
+    in_range = next(c for c in dp._cells if c._date == QDate(2026, 6, 15))
+    out_range = next(c for c in dp._cells if c._date == QDate(2026, 6, 5))
+    assert in_range.ripple._enabled is True
+    assert out_range.ripple._enabled is False
+
+
+def test_year_mode_toggle_and_select(qtbot):
+    host = QWidget()
+    host.resize(500, 560)
+    qtbot.addWidget(host)
+    dp = MdDatePicker(host, initial_date=QDate(2026, 6, 15))
+    assert dp._mode == "day"
+
+    dp._toggle_year_mode()
+    assert dp._mode == "year"
+    assert not dp._year_scroll.isHidden()
+    assert dp._grid_holder.isHidden()
+    assert dp._weekday_row.isHidden()
+
+    dp._on_year_picked(2030)
+    assert dp._view.year() == 2030
+    assert dp._view.month() == 6   # month preserved
+    assert dp._mode == "day"       # back to the day grid
+    assert dp._grid_holder.isVisible() or not dp._grid_holder.isHidden()

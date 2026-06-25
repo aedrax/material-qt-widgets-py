@@ -19,9 +19,11 @@ from collections.abc import Callable
 from PySide6.QtCore import QDate, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
@@ -37,6 +39,7 @@ from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..button import MdTextButton
 from ..iconbutton import MdIconButton
+from ..scrollbar import use_material_scrollbars
 
 _PANEL_W = 328
 _CELL = 40
@@ -117,6 +120,11 @@ class _DayCell(MaterialWidgetMixin, QWidget):
             if clickable
             else Qt.CursorShape.ArrowCursor
         )
+        # Empty (no-date) and disabled cells must not show the hover state layer
+        # — the ripple overlay paints independently of this widget's paintEvent,
+        # so suppress it rather than relying on paintEvent's early return.
+        if self.ripple is not None:
+            self.ripple.set_enabled(clickable)
         self.update()
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
@@ -159,6 +167,57 @@ class _DayCell(MaterialWidgetMixin, QWidget):
         painter.setPen(text_color)
         painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
                          str(self._date.day()))
+
+
+class _ClickableLabel(QLabel):
+    """A label that emits ``clicked`` on press (used for the month/year toggle)."""
+
+    clicked = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+class _YearCell(QLabel):
+    """A clickable year in the year-selection grid."""
+
+    clicked = Signal(int)
+
+    def __init__(self, year: int, *, selected: bool, enabled: bool) -> None:
+        super().__init__(str(year))
+        self._year = year
+        self._selected = selected
+        self._enabled = enabled
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedHeight(36)
+        self.setFont(font_for_role(TypescaleRole.BODY_LARGE))
+        if enabled:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._restyle()
+
+    def _restyle(self) -> None:
+        theme = ThemeManager.instance()
+        if self._selected:
+            bg = theme.color(ColorRole.PRIMARY).name()
+            fg = theme.color(ColorRole.ON_PRIMARY).name()
+            self.setStyleSheet(
+                f"color: {fg}; background: {bg}; border-radius: 18px;"
+            )
+        else:
+            fg = QColor(theme.color(ColorRole.ON_SURFACE))
+            if not self._enabled:
+                fg.setAlphaF(0.38)
+            self.setStyleSheet(f"color: {fg.name(QColor.NameFormat.HexArgb)};")
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if self._enabled:
+            self.clicked.emit(self._year)
+        super().mousePressEvent(event)
 
 
 class _DatePanel(MaterialWidgetMixin, QWidget):
@@ -217,22 +276,26 @@ class MdDatePicker(ModalOverlay):
         pl.addWidget(self._support)
         pl.addWidget(self._headline)
 
-        # Month navigation row.
+        # Month navigation row. The month/year label toggles the year picker.
+        self._mode = "day"  # or "year"
         nav = QHBoxLayout()
-        self._month_label = QLabel()
+        self._month_label = _ClickableLabel()
         self._month_label.setFont(font_for_role(TypescaleRole.TITLE_SMALL))
-        prev_btn = MdIconButton("chevron_left")
-        next_btn = MdIconButton("chevron_right")
-        prev_btn.clicked.connect(lambda: self._shift_month(-1))
-        next_btn.clicked.connect(lambda: self._shift_month(1))
+        self._month_label.clicked.connect(self._toggle_year_mode)
+        self._prev_btn = MdIconButton("chevron_left")
+        self._next_btn = MdIconButton("chevron_right")
+        self._prev_btn.clicked.connect(lambda: self._shift_month(-1))
+        self._next_btn.clicked.connect(lambda: self._shift_month(1))
         nav.addWidget(self._month_label)
         nav.addStretch(1)
-        nav.addWidget(prev_btn)
-        nav.addWidget(next_btn)
+        nav.addWidget(self._prev_btn)
+        nav.addWidget(self._next_btn)
         pl.addLayout(nav)
 
-        # Weekday header row.
-        wk = QHBoxLayout()
+        # Weekday header row (hidden in year mode).
+        self._weekday_row = QWidget()
+        wk = QHBoxLayout(self._weekday_row)
+        wk.setContentsMargins(0, 0, 0, 0)
         wk.setSpacing(0)
         for d in _WEEKDAYS:
             lbl = QLabel(d)
@@ -241,7 +304,7 @@ class MdDatePicker(ModalOverlay):
             lbl.setFont(font_for_role(TypescaleRole.BODY_SMALL))
             wk.addWidget(lbl)
         wk.addStretch(1)
-        pl.addLayout(wk)
+        pl.addWidget(self._weekday_row)
 
         # Day grid (6 rows x 7 cols).
         self._grid = QGridLayout()
@@ -252,10 +315,21 @@ class MdDatePicker(ModalOverlay):
             cell.clicked.connect(self._on_day_clicked)
             self._cells.append(cell)
             self._grid.addWidget(cell, i // 7, i % 7)
-        grid_holder = QWidget()
-        grid_holder.setLayout(self._grid)
-        grid_holder.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        pl.addWidget(grid_holder)
+        self._grid_holder = QWidget()
+        self._grid_holder.setLayout(self._grid)
+        self._grid_holder.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        pl.addWidget(self._grid_holder)
+
+        # Year-selection grid (built on demand, shown in place of the day grid).
+        self._year_scroll = QScrollArea()
+        self._year_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._year_scroll.setWidgetResizable(True)
+        self._year_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._year_scroll.setFixedHeight(7 * _CELL)  # ~ weekday row + day grid
+        use_material_scrollbars(self._year_scroll)
+        self._year_scroll.hide()
+        pl.addWidget(self._year_scroll)
 
         # Actions.
         actions = QHBoxLayout()
@@ -297,9 +371,60 @@ class MdDatePicker(ModalOverlay):
         self._selected = date
         self._refresh()
 
+    def _update_month_label(self) -> None:
+        arrow = " ▲" if self._mode == "year" else " ▾"
+        self._month_label.setText(self._view.toString("MMMM yyyy") + arrow)
+
+    def _year_range(self) -> tuple[int, int]:
+        """Inclusive [start, end] years offered by the year picker."""
+        start = self._first_date.year() if self._first_date else self._view.year() - 100
+        end = self._last_date.year() if self._last_date else self._view.year() + 100
+        return start, max(start, end)
+
+    def _toggle_year_mode(self) -> None:
+        self._mode = "year" if self._mode == "day" else "day"
+        year = self._mode == "year"
+        self._weekday_row.setVisible(not year)
+        self._grid_holder.setVisible(not year)
+        self._prev_btn.setVisible(not year)
+        self._next_btn.setVisible(not year)
+        self._year_scroll.setVisible(year)
+        if year:
+            self._build_year_grid()
+        self._update_month_label()
+
+    def _build_year_grid(self) -> None:
+        content = QWidget()
+        grid = QGridLayout(content)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(4)
+        start, end = self._year_range()
+        current = None
+        for n, y in enumerate(range(start, end + 1)):
+            # A year is offered if any day in it could be selectable (cheap check
+            # against the [first, last] bounds; the predicate is per-day).
+            enabled = not (
+                (self._first_date and y < self._first_date.year())
+                or (self._last_date and y > self._last_date.year())
+            )
+            cell = _YearCell(y, selected=(y == self._view.year()), enabled=enabled)
+            cell.clicked.connect(self._on_year_picked)
+            grid.addWidget(cell, n // 3, n % 3)
+            if y == self._view.year():
+                current = cell
+        self._year_scroll.setWidget(content)
+        if current is not None:
+            self._year_scroll.ensureWidgetVisible(current, 0, 100)
+
+    def _on_year_picked(self, year: int) -> None:
+        # Keep the month; clamp the day implicitly by viewing the 1st.
+        self._view = QDate(year, self._view.month(), 1)
+        self._toggle_year_mode()  # back to the day grid
+        self._refresh()
+
     def _refresh(self) -> None:
         self._headline.setText(self._selected.toString("ddd, MMM d"))
-        self._month_label.setText(self._view.toString("MMMM yyyy"))
+        self._update_month_label()
         offset = first_column(self._view.year(), self._view.month())
         days = self._view.daysInMonth()
         today = self._current_date

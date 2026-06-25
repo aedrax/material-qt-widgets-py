@@ -40,6 +40,20 @@ _HEADING_H = 56
 _ROW_H = 52
 _MARGIN = 24
 _CHECKBOX_W = 56
+_CELL_V_PAD = 8  # top/bottom padding so wrapped multi-line cells aren't cramped
+
+
+def _cell_size_policy() -> QSizePolicy:
+    """Equal, stretch-driven column width + wrap-aware height.
+
+    Horizontal ``Ignored`` makes every column an equal share (identical in the
+    header and every data row, so columns stay aligned at any width); vertical
+    ``Minimum`` + ``heightForWidth`` lets a wrapped cell report the taller height
+    its text needs at the column's width, so the row grows to fit.
+    """
+    sp = QSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
+    sp.setHeightForWidth(True)
+    return sp
 
 
 def sort_rows(
@@ -77,11 +91,8 @@ class _HeaderCell(QLabel):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         align = Qt.AlignmentFlag.AlignRight if numeric else Qt.AlignmentFlag.AlignLeft
         self.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
-        # Ignore the label's own text width so every column gets an equal,
-        # stretch-driven share — identical in the header and every data row, so
-        # columns stay aligned even when the view is narrow (long text clips
-        # rather than shoving the column over).
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setWordWrap(True)
+        self.setSizePolicy(_cell_size_policy())
 
     def set_sort_indicator(self, state: str) -> None:
         """``state`` is 'asc', 'desc', or '' (none)."""
@@ -220,16 +231,20 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
         lbl.setAlignment(align | Qt.AlignmentFlag.AlignVCenter)
         color = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
         lbl.setStyleSheet(f"color: {color};")
-        # Equal, stretch-driven column widths (see _HeaderCell) so data cells
-        # line up with the header regardless of text length or view width.
-        lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        lbl.setWordWrap(True)
+        lbl.setSizePolicy(_cell_size_policy())
         return lbl
 
     def _make_row(self, height: int) -> tuple[QWidget, QHBoxLayout]:
         row = QWidget()
-        row.setFixedHeight(height)
+        # Minimum (not fixed) height so a row grows when a cell's text wraps to
+        # multiple lines; it stays at ``height`` while every cell fits on one.
+        row.setMinimumHeight(height)
+        sp = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+        sp.setHeightForWidth(True)
+        row.setSizePolicy(sp)
         hl = QHBoxLayout(row)
-        hl.setContentsMargins(_MARGIN, 0, _MARGIN, 0)
+        hl.setContentsMargins(_MARGIN, _CELL_V_PAD, _MARGIN, _CELL_V_PAD)
         hl.setSpacing(self._column_spacing)
         return row, hl
 
@@ -276,6 +291,9 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
             self._lay.addWidget(row)
             if r < len(self._rows) - 1:
                 self._lay.addWidget(MdDivider())
+        # Absorb any extra vertical space so rows keep their natural (content)
+        # height instead of stretching to fill a taller container.
+        self._lay.addStretch(1)
 
     def _on_select_all(self, checked: bool) -> None:
         for cb in self._row_checks:

@@ -50,6 +50,38 @@ def test_columns_stay_aligned_at_narrow_width(qtbot):
         assert xs(row) == header_xs
 
 
+def test_long_cell_text_wraps_and_grows_its_row(qtbot):
+    # Content should wrap to multiple lines (taller row) rather than vanish.
+    from material_qt.widgets.datatable.datatable import _ROW_H
+
+    host = QWidget()
+    lay = QVBoxLayout(host)
+    t = MdDataTable()
+    t.set_columns(["Dessert", "Calories"], numeric=[False, True])
+    t.set_rows([
+        ["Short", "1"],
+        ["A rather long multi word dessert description here", "2"],
+    ])
+    lay.addWidget(t)
+    qtbot.addWidget(host)
+    host.resize(220, 400)
+    host.show()
+    qtbot.waitExposed(host)
+
+    header_row = t._header_cells[0].parentWidget()
+    rows = [
+        t._lay.itemAt(i).widget()
+        for i in range(t._lay.count())
+        if t._lay.itemAt(i).widget() is not None
+        and t._lay.itemAt(i).widget() is not header_row
+        and t._lay.itemAt(i).widget().findChildren(QLabel)
+    ]
+    short_row, long_row = rows
+    # The wrapped row is taller than the single-line baseline; the short one isn't.
+    assert long_row.height() > _ROW_H
+    assert long_row.height() > short_row.height()
+
+
 def test_columns_and_rows(qtbot):
     t = _table(qtbot)
     t.set_columns(["Name", "Calories"], numeric=[False, True])

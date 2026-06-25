@@ -34,6 +34,7 @@ from ...tokens.shape import ShapeScale
 from ...tokens.typography import TypescaleRole
 from ...theme.theme_manager import ThemeManager
 from ..icon.icon import material_symbols_font
+from ..scrollbar import use_material_scrollbars
 
 _ITEM_H = 48
 _PAD = 12
@@ -323,6 +324,10 @@ class MdMenu(QWidget):
         self._scroll.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._scroll.viewport().setAutoFillBackground(False)
         self._scroll.setWidget(self._panel)
+        # The popup scrolls vertically past max_height — use the Material
+        # scrollbar (it's created lazily, so the gallery's app-wide sweep misses
+        # it; install it here so every menu/dropdown is consistent).
+        use_material_scrollbars(self._scroll)
         outer.addWidget(self._scroll)
 
     # -- properties --------------------------------------------------------

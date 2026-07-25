@@ -203,6 +203,24 @@ def test_explicit_none_value_preserved(qtbot):
     assert other.value() == 1   # unset -> index fallback
 
 
+def test_checked_segment_widens_and_announces_geometry_change(qtbot):
+    """Regression: checking a segment adds the leading checkmark (+26px in the
+    size hint) but only update() was called — without updateGeometry() a snug
+    layout kept the stale hint and clipped the check + label."""
+    s = MdSegmentedButtonSet()
+    qtbot.addWidget(s)
+    a, b = MdSegmentedButton("Day"), MdSegmentedButton("Week")
+    s.add_segment(a)
+    s.add_segment(b)
+    seg_before = a.sizeHint().width()
+    set_before = s.sizeHint().width()  # caches the layout's size hint
+    a.setChecked(True)
+    assert a.sizeHint().width() > seg_before
+    # updateGeometry() must invalidate the parent layout so the set's own
+    # size hint reflects the wider segment.
+    assert s.sizeHint().width() > set_before
+
+
 def test_renders(qtbot):
     s = MdSegmentedButtonSet()
     qtbot.addWidget(s)

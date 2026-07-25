@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from material_qt.tokens.color import ColorRole
 from material_qt.widgets.checkbox import MdCheckbox
 
 
@@ -66,6 +67,36 @@ def test_label_sets_accessible_name(qtbot):
     assert cb.label == "Accept terms"
     cb.set_label("Other")
     assert cb.accessibleName() == "Other"
+
+
+def test_error_ripple_role_at_construction(qtbot):
+    """Regression: the ctor computed the ripple role ignoring ``error``."""
+    cb = MdCheckbox(error=True)
+    qtbot.addWidget(cb)
+    assert cb.ripple.overlay.color_role == ColorRole.ERROR
+
+
+def test_set_error_resyncs_ripple_role(qtbot):
+    """Regression: set_error never resynced the ripple color role."""
+    cb = MdCheckbox()
+    qtbot.addWidget(cb)
+    assert cb.ripple.overlay.color_role == ColorRole.ON_SURFACE
+    cb.set_error(True)
+    assert cb.ripple.overlay.color_role == ColorRole.ERROR
+    cb.set_error(False)
+    assert cb.ripple.overlay.color_role == ColorRole.ON_SURFACE
+
+
+def test_uncheck_clears_indeterminate(qtbot):
+    """Regression: unchecking a checked+indeterminate checkbox left the dash
+    (indeterminate was only cleared when transitioning TO checked)."""
+    cb = MdCheckbox(checked=True)
+    qtbot.addWidget(cb)
+    cb.set_indeterminate(True)
+    assert cb.isChecked() and cb.indeterminate
+    cb.click()
+    assert cb.isChecked() is False
+    assert cb.indeterminate is False
 
 
 def test_repeated_toggle_with_animation_settle(qtbot):

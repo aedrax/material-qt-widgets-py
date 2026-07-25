@@ -35,6 +35,17 @@ def test_toggle_selected_icon(qtbot):
     assert b._current_icon() == "b"
 
 
+def test_toggle_checked_at_construction_gets_selected_ripple_role(qtbot):
+    """Regression: the ripple role was computed before setChecked and the
+    toggled hook connected after, so a checked-at-construction toggle button
+    kept the unselected role."""
+    b = MdFilledIconButton("favorite", toggle=True, checked=True)
+    qtbot.addWidget(b)
+    assert b.isChecked() is True
+    assert b.ripple.overlay.color_role == b._icon_color_role()
+    assert b.ripple.overlay.color_role == ColorRole.ON_PRIMARY  # selected
+
+
 def test_size_and_render(qtbot):
     for cls in (MdIconButton, MdFilledIconButton, MdOutlinedIconButton):
         b = cls("favorite")

@@ -150,6 +150,26 @@ class MdRadio(MaterialWidgetMixin, QAbstractButton):
             return
         super().mouseReleaseEvent(event)
 
+    def keyReleaseEvent(self, event) -> None:  # noqa: N802
+        """Space activation; deselects when toggleable and already selected.
+
+        Qt activates buttons on Space release through the C++ click path,
+        which bypasses the Python ``click()`` shadow above, so the toggleable
+        deselect has to be routed here explicitly.
+        """
+        if (
+            event.key() == Qt.Key.Key_Space
+            and not event.isAutoRepeat()
+            and self.isDown()
+            and self._toggleable
+            and self.isChecked()
+        ):
+            self._run_with_exclusivity_off(
+                lambda: super(MdRadio, self).keyReleaseEvent(event)
+            )
+            return
+        super().keyReleaseEvent(event)
+
     # -- sizing ------------------------------------------------------------
 
     def sizeHint(self) -> QSize:  # noqa: N802

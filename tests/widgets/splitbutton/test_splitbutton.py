@@ -54,6 +54,26 @@ def test_disabled_propagates(qtbot):
     assert not sb._trailing.isEnabled()
 
 
+def test_pressed_segment_drops_hover_elevation(qtbot):
+    """Regression: no press/release path refreshed elevation, so a pressed
+    segment kept the hover lift."""
+    from PySide6.QtCore import Qt
+
+    from material_qt.tokens.elevation import ElevationLevel
+
+    sb = MdSplitButton("Save")  # FILLED: rest LEVEL0, hover LEVEL1
+    qtbot.addWidget(sb)
+    seg = sb._leading
+    seg.setAttribute(Qt.WidgetAttribute.WA_UnderMouse, True)  # simulate hover
+    seg._refresh_elevation()
+    assert seg._elevation == ElevationLevel.LEVEL1  # hovered
+    qtbot.mousePress(seg, Qt.MouseButton.LeftButton)
+    assert seg.isDown() is True
+    assert seg._elevation == ElevationLevel.LEVEL0  # pressed drops the lift
+    qtbot.mouseRelease(seg, Qt.MouseButton.LeftButton)
+    assert seg._elevation == ElevationLevel.LEVEL1  # back to hover
+
+
 def test_renders(qtbot):
     for color in SplitButtonColor:
         sb = MdSplitButton("Save", color=color, icon="save")

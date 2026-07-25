@@ -120,8 +120,16 @@ class MdButtonGroup(MaterialWidgetMixin, QWidget):
             self._group.addButton(btn, len(self._buttons))
         self._lay.insertWidget(self._lay.count() - 1, btn)
         self._buttons.append(btn)
-        btn.toggled.connect(lambda *_: self.changed.emit(self.selected_indices()))
+        btn.toggled.connect(self._on_button_toggled)
         return btn
+
+    def _on_button_toggled(self, checked: bool) -> None:
+        # A single-select (exclusive) switch fires two toggled signals (old
+        # button off, new button on); emit only on the selection so the group
+        # reports exactly one change per switch.
+        if self._group is not None and not checked:
+            return
+        self.changed.emit(self.selected_indices())
 
     def selected_indices(self) -> list[int]:
         return [i for i, b in enumerate(self._buttons) if b.isChecked()]

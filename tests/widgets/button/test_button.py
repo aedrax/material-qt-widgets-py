@@ -184,6 +184,73 @@ def test_short_press_still_clicks(qtbot):
     assert clicks == [1]
 
 
+def test_return_key_activates(qtbot):
+    """Regression: Return/Enter showed a keyboard ripple but activated nothing
+    (QAbstractButton only clicks on Space)."""
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    b = MdFilledButton("OK")
+    qtbot.addWidget(b)
+    clicks = []
+    b.clicked.connect(lambda: clicks.append(1))
+    # sendEvent so the ripple's event filter (which routes the click) runs.
+    QApplication.sendEvent(
+        b, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    )
+    QApplication.sendEvent(
+        b, QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    )
+    assert clicks == [1]
+    # An auto-repeated Return must not fire again.
+    QApplication.sendEvent(
+        b,
+        QKeyEvent(
+            QEvent.Type.KeyPress,
+            Qt.Key.Key_Return,
+            Qt.KeyboardModifier.NoModifier,
+            "",
+            True,  # autorep
+        ),
+    )
+    assert clicks == [1]
+
+
+def test_space_key_still_activates_once(qtbot):
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    b = MdFilledButton("OK")
+    qtbot.addWidget(b)
+    clicks = []
+    b.clicked.connect(lambda: clicks.append(1))
+    QApplication.sendEvent(
+        b, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+    )
+    QApplication.sendEvent(
+        b, QKeyEvent(QEvent.Type.KeyRelease, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+    )
+    assert clicks == [1]  # Qt's own Space handling; no double-fire
+
+
+def test_return_key_ignored_when_disabled(qtbot):
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    b = MdFilledButton("OK")
+    qtbot.addWidget(b)
+    b.setEnabled(False)
+    clicks = []
+    b.clicked.connect(lambda: clicks.append(1))
+    QApplication.sendEvent(
+        b, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier)
+    )
+    assert clicks == []
+
+
 def test_autofocus_on_show(qtbot):
     from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
 

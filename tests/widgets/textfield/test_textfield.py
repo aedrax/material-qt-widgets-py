@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QIntValidator
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QFocusEvent, QIntValidator, QTextCursor
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLineEdit, QPlainTextEdit
+from PySide6.QtWidgets import QApplication, QLineEdit, QPlainTextEdit
 
 from material_qt.widgets.field import FieldVariant
 from material_qt.widgets.textfield import MdFilledTextField, MdOutlinedTextField
@@ -106,6 +106,81 @@ def test_multiline_max_length_enforced(qtbot):
     assert tf._field._counter == "4/4"
 
 
+def _put_cursor(edit: QPlainTextEdit, pos: int) -> None:
+    cursor = edit.textCursor()
+    cursor.setPosition(pos)
+    edit.setTextCursor(cursor)
+
+
+def test_multiline_full_field_rejects_insertion_keeps_tail(qtbot):
+    # Pasting into the middle of a FULL field must reject the paste — not
+    # silently eat the end of the existing text.
+    tf = MdFilledTextField(label="Bio", max_lines=3, max_length=4)
+    qtbot.addWidget(tf)
+    tf.set_text("abcd")
+    _put_cursor(tf.line_edit, 2)
+    tf.line_edit.insertPlainText("XY")
+    assert tf.text() == "abcd"
+    assert tf._field._counter == "4/4"
+
+
+def test_multiline_overflow_trims_insertion_not_tail(qtbot):
+    # A mid-document paste into a nearly-full field keeps the tail and trims
+    # only the inserted text.
+    tf = MdFilledTextField(label="Bio", max_lines=3, max_length=4)
+    qtbot.addWidget(tf)
+    tf.set_text("abc")
+    _put_cursor(tf.line_edit, 1)
+    tf.line_edit.insertPlainText("XY")
+    assert tf.text() == "aXbc"
+
+
+def test_multiline_undo_survives_max_length_trim(qtbot):
+    tf = MdFilledTextField(label="Bio", max_lines=3, max_length=4)
+    qtbot.addWidget(tf)
+    edit = tf.line_edit
+    edit.clear()  # start with an undo-enabled, empty document
+    QTest.keyClicks(edit, "abcd")
+    QTest.keyClicks(edit, "e")  # rejected by the limit
+    assert tf.text() == "abcd"
+    # The old setPlainText() rewrite wiped the undo stack entirely.
+    assert edit.document().isUndoAvailable()
+    edit.undo()
+    assert "e" not in tf.text()  # never resurrects the rejected char
+
+
+def test_counter_counts_utf16_units_singleline(qtbot):
+    tf = MdFilledTextField(label="Emoji", max_length=4)
+    qtbot.addWidget(tf)
+    tf.set_text("\U0001f600\U0001f600")  # 2 code points, 4 UTF-16 units
+    # QLineEdit.maxLength counts UTF-16 units — the counter must agree
+    # (the old code-point count read "2/4" forever).
+    assert tf._field._counter == "4/4"
+    tf.line_edit.insert("x")  # at the cap: further input rejected
+    assert tf.text() == "\U0001f600\U0001f600"
+
+
+def test_multiline_max_length_counts_utf16_units(qtbot):
+    tf = MdFilledTextField(label="Emoji", max_lines=3, max_length=4)
+    qtbot.addWidget(tf)
+    tf.set_text("\U0001f600\U0001f600")
+    assert tf.text() == "\U0001f600\U0001f600"
+    assert tf._field._counter == "4/4"
+    tf.line_edit.moveCursor(QTextCursor.MoveOperation.End)
+    tf.line_edit.insertPlainText("\U0001f600")  # would exceed: rejected whole
+    assert tf.text() == "\U0001f600\U0001f600"
+    assert tf._field._counter == "4/4"
+
+
+def test_multiline_max_length_never_splits_surrogate_pair(qtbot):
+    tf = MdFilledTextField(label="Emoji", max_lines=3, max_length=5)
+    qtbot.addWidget(tf)
+    tf.set_text("\U0001f600\U0001f600")  # 4 units; 1 unit of room left
+    tf.line_edit.moveCursor(QTextCursor.MoveOperation.End)
+    tf.line_edit.insertPlainText("\U0001f600")  # 2 units: can't fit half
+    assert tf.text() == "\U0001f600\U0001f600"
+
+
 def test_password_toggle_real_click(qtbot):
     tf = MdFilledTextField(label="Password", password=True)
     qtbot.addWidget(tf)
@@ -153,6 +228,39 @@ def test_enabled_and_read_only(qtbot):
     assert tf.is_read_only() is True
     tf.set_enabled(True)
     assert tf.isEnabled() is True
+
+
+def _send_focus(edit, event_type):
+    QApplication.sendEvent(edit, QFocusEvent(event_type))
+
+
+def test_placeholder_hidden_while_label_rests(qtbot):
+    # M3: label + placeholder, unfocused + empty → only the resting label
+    # shows; the inner edit must not paint the placeholder underneath it.
+    tf = MdFilledTextField(label="Name", placeholder="Jane Doe")
+    qtbot.addWidget(tf)
+    assert tf.line_edit.placeholderText() == ""
+    _send_focus(tf.line_edit, QEvent.Type.FocusIn)  # label floats
+    assert tf.line_edit.placeholderText() == "Jane Doe"
+    _send_focus(tf.line_edit, QEvent.Type.FocusOut)  # label rests again
+    assert tf.line_edit.placeholderText() == ""
+
+
+def test_placeholder_shown_without_label(qtbot):
+    tf = MdFilledTextField(placeholder="Search")
+    qtbot.addWidget(tf)
+    assert tf.line_edit.placeholderText() == "Search"
+    tf.set_placeholder("Find")
+    assert tf.line_edit.placeholderText() == "Find"
+
+
+def test_set_placeholder_respects_resting_label(qtbot):
+    tf = MdFilledTextField(label="Name", max_lines=3)
+    qtbot.addWidget(tf)
+    tf.set_placeholder("Jane Doe")
+    assert tf.line_edit.placeholderText() == ""
+    _send_focus(tf.line_edit, QEvent.Type.FocusIn)
+    assert tf.line_edit.placeholderText() == "Jane Doe"
 
 
 def test_renders(qtbot):

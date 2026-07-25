@@ -46,6 +46,9 @@ and a gallery page unless noted):
 | `MdPaginatedDataTable` | `paginated_data_table.dart` | `widgets/datatable` |
 | `MdRefreshIndicator` | `refresh_indicator.dart` | `widgets/refreshindicator` |
 | `MdStepper` (+`MdStep`) | `stepper.dart` | `widgets/stepper` |
+| `MdReorderableList` | `reorderable_list.dart` | `widgets/reorderablelist` |
+| `MdDismissible` | `dismissible.dart` (widgets/) | `widgets/dismissible` |
+| `MdDraggableScrollableSheet` | `draggable_scrollable_sheet.dart` (widgets/) | `widgets/draggablesheet` |
 
 ## Notes
 

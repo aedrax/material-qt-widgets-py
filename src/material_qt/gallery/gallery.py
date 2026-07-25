@@ -37,7 +37,10 @@ from ..widgets.avatar import MdCircleAvatar
 from ..widgets.badge import MdBadge
 from ..widgets.banner import MdBanner
 from ..widgets.bottomappbar import MdBottomAppBar
+from ..widgets.dismissible import DismissDirection, MdDismissible
+from ..widgets.draggablesheet import MdDraggableScrollableSheet
 from ..widgets.refreshindicator import MdRefreshIndicator
+from ..widgets.reorderablelist import MdReorderableList
 from ..widgets.stepper import MdStep, MdStepper
 from ..widgets.bottomsheet import MdBottomSheet, MdStandardBottomSheet
 from ..widgets.buttongroup import MdButtonGroup
@@ -572,6 +575,90 @@ def _build_list() -> QWidget:
                             leading=MdIcon("drafts")), divider=True)
     lst.setMaximumWidth(420)
     lay.addWidget(lst)
+    lay.addStretch(1)
+    return page
+
+
+def _build_reorderable_list() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Drag the handle to reorder"))
+    lst = MdReorderableList()
+    for name, icon in [("Reduce", "wb_sunny"), ("Reuse", "recycling"),
+                       ("Recycle", "compost"), ("Repair", "build")]:
+        lst.add_item(MdListItem(name, leading=MdIcon(icon), interactive=False))
+    lst.setMaximumWidth(420)
+    lay.addWidget(lst)
+    lay.addStretch(1)
+    return page
+
+
+class _DismissBg(QWidget):
+    """A flat themed reveal panel with an edge icon for the dismissible demo."""
+
+    def __init__(self, role: ColorRole, on_role: ColorRole, icon: str, align_end: bool):
+        super().__init__()
+        self._role = role
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(20, 0, 20, 0)
+        glyph = MdIcon(icon, color_role=on_role)
+        if align_end:
+            lay.addStretch(1)
+            lay.addWidget(glyph)
+        else:
+            lay.addWidget(glyph)
+            lay.addStretch(1)
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        QPainter(self).fillRect(self.rect(), ThemeManager.instance().color(self._role))
+
+
+def _build_dismissible() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Swipe a row left or right to dismiss"))
+    col = QVBoxLayout()
+    col.setSpacing(0)
+    status = QLabel("(swipe a row)")
+    for name in ["Archive me", "Swipe to delete", "Either direction works", "Bye"]:
+        item = MdListItem(name, leading=MdIcon("mail"), interactive=False)
+        d = MdDismissible(
+            item,
+            direction=DismissDirection.HORIZONTAL,
+            background=_DismissBg(ColorRole.PRIMARY_CONTAINER,
+                                  ColorRole.ON_PRIMARY_CONTAINER, "archive", False),
+            secondary_background=_DismissBg(ColorRole.ERROR_CONTAINER,
+                                            ColorRole.ON_ERROR_CONTAINER, "delete", True),
+        )
+        d.dismissed.connect(
+            lambda direction, w=name: status.setText(f"dismissed {w!r} — {direction.value}"))
+        col.addWidget(d)
+    container = QWidget()
+    container.setLayout(col)
+    container.setMaximumWidth(420)
+    lay.addWidget(container)
+    lay.addWidget(status)
+    lay.addStretch(1)
+    return page
+
+
+def _build_draggable_sheet() -> QWidget:
+    page = _page()
+    lay = page.layout()
+    lay.addWidget(_section("Drag the handle to resize; wheel over content to couple"))
+    holder = QWidget()
+    holder.setFixedHeight(360)
+    body = QLabel("Body content sits behind the sheet")
+    body.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+    vb = QVBoxLayout(holder)
+    vb.setContentsMargins(0, 12, 0, 0)
+    vb.addWidget(body)
+    sheet = MdDraggableScrollableSheet(
+        holder, initial_size=0.45, min_size=0.2, max_size=0.95,
+        snap_sizes=[0.45, 0.7])
+    for i in range(24):
+        sheet.add_content(MdItem(f"Item {i + 1}", leading=MdIcon("drag_handle")))
+    lay.addWidget(holder)
     lay.addStretch(1)
     return page
 
@@ -1314,7 +1401,9 @@ _COMPONENTS = [
     ("Data table", _build_data_table),
     ("Date picker", _build_date_picker),
     ("Dialog", _build_dialog),
+    ("Dismissible", _build_dismissible),
     ("Divider", _build_divider),
+    ("Draggable sheet", _build_draggable_sheet),
     ("Expansion panel", _build_expansion_panel),
     ("FAB", _build_fab),
     ("FAB menu", _build_fab_menu),
@@ -1334,6 +1423,7 @@ _COMPONENTS = [
     ("Radio", _build_radio),
     ("Range slider", _build_range_slider),
     ("Refresh indicator", _build_refresh_indicator),
+    ("Reorderable list", _build_reorderable_list),
     ("Scrollbar", _build_scrollbar),
     ("Search bar", _build_search_bar),
     ("Segmented", _build_segmented),
@@ -1374,7 +1464,9 @@ COMPONENT_META: dict[str, tuple[str, str]] = {
     "Data table": ("table_rows", "Rows and columns of sortable data."),
     "Date picker": ("calendar_month", "Select a date from a calendar."),
     "Dialog": ("web_asset", "Modal surface for focused tasks and decisions."),
+    "Dismissible": ("swipe", "Swipe a row aside to dismiss it."),
     "Divider": ("horizontal_rule", "Thin line that groups content."),
+    "Draggable sheet": ("drag_pan", "Resizable bottom sheet with scrollable content."),
     "Expansion panel": ("expand_more", "Header that expands to reveal content."),
     "FAB": ("add_circle", "Floating action button for the primary action."),
     "FAB menu": ("menu_open", "A FAB that expands into labeled actions."),
@@ -1394,6 +1486,7 @@ COMPONENT_META: dict[str, tuple[str, str]] = {
     "Radio": ("radio_button_checked", "Select one option from a set."),
     "Range slider": ("tune", "Select a range between two values."),
     "Refresh indicator": ("refresh", "Pull-to-refresh spinner over content."),
+    "Reorderable list": ("drag_indicator", "Drag rows by a handle to reorder them."),
     "Scrollbar": ("expand", "Rounded thumb that thickens on hover."),
     "Search bar": ("search", "Field for searching app content."),
     "Segmented": ("splitscreen", "Connected toggle buttons for choices."),

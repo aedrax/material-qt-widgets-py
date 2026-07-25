@@ -137,6 +137,28 @@ the forbidden shared `__init__.py`/gallery).
 
 - [x] all properties verified or added
 
+## DraggableScrollableSheet (draggable_scrollable_sheet.dart, widgets/) → MdDraggableScrollableSheet (widgets/draggablesheet) — built 🆕
+Non-modal bottom-anchored sheet, sized as a fraction of the parent height,
+draggable between min/max with snap, hosting a scroll area (Material scrollbars).
+Owns its state: `size_fraction` + `sizeChanged(float)` emitted on every change.
+Resize math is pure (`clamp_size`, `nearest_snap`); the wheel-vs-scroll decision
+is pure (`couple_wheel`, full truth table tested).
+| Flutter property | Qt (QObject) equivalent | Status |
+|---|---|---|
+| `initialChildSize` / `minChildSize` / `maxChildSize` | `initial_size=` / `min_size=` / `max_size=` (clamped) | 🆕 |
+| `snap` / `snapSizes` | `snap=` / `snap_sizes=` (min/max always included) | 🆕 |
+| `builder` (gives a ScrollController) | `add_content(widget)` into an internal `QScrollArea` | 🆕 |
+| `DraggableScrollableController.size` | `size_fraction` @property (renamed to avoid `QWidget.size`) | 🆕 |
+| `controller.animateTo` / `.jumpTo` / `.reset` | `animate_to()` / `set_size(animated=)` / `reset()` | 🆕 |
+| (notifications) | `sizeChanged(float)` Signal | 🆕 |
+| drag/scroll coupling | handle-drag resizes (snaps on release); **wheel** couples to the inner scroll (`couple_wheel`) | 🆕 |
+| mouse/touch finger-drag coupling over content | ⛔ deferred — only the handle drags and the wheel couples (event-capture over arbitrary content is fragile) |
+| snap after a wheel resize | ⛔ deferred — only handle-release snaps; wheel resize lands free |
+| `expand` / `shouldCloseOnMinExtent` / `snapAnimationDuration` | ⛔ token durations; non-modal sheet does not auto-close |
+
+- Note: the down-wheel=grow mapping is faithful to Flutter's finger-up=grow; deliberate, documented in the module.
+- [x] all properties verified or added; built with tests + gallery page
+
 ---
 
 ## Coordinator follow-up

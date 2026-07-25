@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from types import MappingProxyType
-from typing import Mapping
+from collections.abc import Mapping
 
 from PySide6.QtGui import QColor
 

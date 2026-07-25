@@ -117,7 +117,7 @@ def _try_load_font_file() -> str | None:
     return None
 
 
-def material_symbols_family(style: "IconStyle" = None) -> str | None:
+def material_symbols_family(style: IconStyle = None) -> str | None:
     """Resolve a usable Material Symbols family, loading the bundled font if needed.
 
     Shared by other components (buttons, FABs) that render glyphs inline. Returns

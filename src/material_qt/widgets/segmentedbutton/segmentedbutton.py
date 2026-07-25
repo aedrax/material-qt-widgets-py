@@ -99,9 +99,16 @@ class MdSegmentedButton(MaterialWidgetMixin, QAbstractButton):
         )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.toggled.connect(lambda *_: self.update())
+        self.toggled.connect(self._on_toggled)
         self.setEnabled(enabled)
         self._apply_pos()
+
+    def _on_toggled(self, *_) -> None:
+        # Selection adds/removes the leading checkmark, so the size hint
+        # changes — re-query the layout (updateGeometry), don't just repaint,
+        # or a snug layout clips the check + label.
+        self.updateGeometry()
+        self.update()
 
     # -- value (Flutter ButtonSegment.value) ------------------------------
 

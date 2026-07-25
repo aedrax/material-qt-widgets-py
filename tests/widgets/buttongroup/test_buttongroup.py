@@ -35,6 +35,20 @@ def test_changed_signal(qtbot):
     assert seen[-1] == [0]
 
 
+def test_single_select_switch_emits_changed_once(qtbot):
+    """Regression: an exclusive switch fires two toggled signals (old off, new
+    on); ``changed`` must still be emitted exactly once."""
+    g = MdButtonGroup(multi=False)
+    qtbot.addWidget(g)
+    a = g.add_button("Day")
+    b = g.add_button("Week")
+    a.setChecked(True)
+    seen = []
+    g.changed.connect(seen.append)
+    b.click()
+    assert seen == [[1]]
+
+
 def test_renders(qtbot):
     g = MdButtonGroup()
     qtbot.addWidget(g)

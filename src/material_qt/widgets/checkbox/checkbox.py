@@ -65,6 +65,9 @@ class MdCheckbox(MaterialWidgetMixin, QAbstractButton):
         )
         if checked:
             self.setChecked(True)
+        # The ctor ripple role above ignores ``error``; resync so an
+        # error-at-construction checkbox gets the ERROR ripple.
+        self._sync_ripple_role()
         self.toggled.connect(self._on_toggled)
 
     # -- properties --------------------------------------------------------
@@ -87,6 +90,7 @@ class MdCheckbox(MaterialWidgetMixin, QAbstractButton):
 
     def set_error(self, value: bool) -> None:
         self._error = bool(value)
+        self._sync_ripple_role()
         self.update()
 
     @property
@@ -103,15 +107,19 @@ class MdCheckbox(MaterialWidgetMixin, QAbstractButton):
         return self.isChecked() or self._indeterminate
 
     def _on_toggled(self, checked: bool) -> None:
-        if checked:
-            self._indeterminate = False
+        # Any toggle resolves the mixed state — unchecking a
+        # checked+indeterminate box must also drop the dash.
+        self._indeterminate = False
         self._sync_marker()
 
-    def _sync_marker(self) -> None:
-        target = 1.0 if self._marked() else 0.0
+    def _sync_ripple_role(self) -> None:
         role = ColorRole.PRIMARY if self._marked() else ColorRole.ON_SURFACE
         if self.ripple is not None:
             self.ripple.set_color_role(ColorRole.ERROR if self._error else role)
+
+    def _sync_marker(self) -> None:
+        target = 1.0 if self._marked() else 0.0
+        self._sync_ripple_role()
         self._anim.stop()
         # Snap (no animation) for programmatic state set before the widget is
         # shown, or when motion is disabled.

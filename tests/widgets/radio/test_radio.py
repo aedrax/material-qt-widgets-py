@@ -61,6 +61,47 @@ def test_toggleable_in_button_group(qtbot):
     assert b.isChecked() and not a.isChecked()
 
 
+def test_toggleable_space_deselects(qtbot):
+    """Regression: keyboard Space goes through the C++ click path, bypassing
+    the Python click() shadow — a toggleable checked radio never deselected."""
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    r = MdRadio(checked=True, toggleable=True)
+    qtbot.addWidget(r)
+
+    def space(etype):
+        QApplication.sendEvent(
+            r, QKeyEvent(etype, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+        )
+
+    space(QEvent.Type.KeyPress)
+    space(QEvent.Type.KeyRelease)
+    assert r.isChecked() is False
+    # Space again re-selects.
+    space(QEvent.Type.KeyPress)
+    space(QEvent.Type.KeyRelease)
+    assert r.isChecked() is True
+    # Mouse parity retained: click() still deselects.
+    r.click()
+    assert r.isChecked() is False
+
+
+def test_non_toggleable_space_stays_selected(qtbot):
+    from PySide6.QtCore import QEvent, Qt
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QApplication
+
+    r = MdRadio(checked=True)
+    qtbot.addWidget(r)
+    for etype in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease):
+        QApplication.sendEvent(
+            r, QKeyEvent(etype, Qt.Key.Key_Space, Qt.KeyboardModifier.NoModifier)
+        )
+    assert r.isChecked() is True
+
+
 def test_non_toggleable_stays_selected_on_click(qtbot):
     r = MdRadio(checked=True)
     qtbot.addWidget(r)

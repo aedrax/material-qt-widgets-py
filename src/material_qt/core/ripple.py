@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     QTimer,
 )
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QRadialGradient
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QAbstractButton, QWidget
 from shiboken6 import isValid
 
 from ..tokens.color import ColorRole
@@ -32,7 +32,7 @@ from ..tokens.motion import Duration, Easing
 from ..tokens.shape import CornerRadii
 from ..tokens.state import StateLayer
 from ..theme.theme_manager import ThemeManager
-from .motion import MOTION_ENABLED, duration_ms, easing_curve
+from .motion import MOTION_ENABLED
 from .shape_util import rounded_path
 
 # Geometry constants from ripple.ts.
@@ -209,10 +209,13 @@ class RippleController(QObject):
                 self._set_hover(False)
                 if self._pressed:
                     self._end_press()
-            elif et == QEvent.Type.MouseButtonPress:
+            elif et in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick):
+                # Qt delivers the second press of a double-click as DblClick, so
+                # it must begin a press ripple just like a plain press; the
+                # following release ends it.
                 if event.button() == Qt.MouseButton.LeftButton:
                     self._start_press(event.position())
-            elif et in (QEvent.Type.MouseButtonRelease, QEvent.Type.MouseButtonDblClick):
+            elif et == QEvent.Type.MouseButtonRelease:
                 if self._pressed:
                     self._end_press()
             elif et == QEvent.Type.KeyPress:
@@ -222,6 +225,16 @@ class RippleController(QObject):
                     Qt.Key.Key_Enter,
                 ) and not event.isAutoRepeat():
                     self._activate_keyboard()
+                    # QAbstractButton only activates on Space; click on
+                    # Return/Enter so the keyboard ripple always corresponds
+                    # to an actual activation (Space is left to Qt to avoid
+                    # double-firing).
+                    if (
+                        event.key() != Qt.Key.Key_Space
+                        and isinstance(self._host, QAbstractButton)
+                        and self._host.isEnabled()
+                    ):
+                        self._host.click()
             elif et == QEvent.Type.FocusIn:
                 if event.reason() in (
                     Qt.FocusReason.TabFocusReason,

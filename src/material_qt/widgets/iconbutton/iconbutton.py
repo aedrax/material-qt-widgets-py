@@ -77,11 +77,13 @@ class MdIconButton(LongPressMixin, MaterialWidgetMixin, QAbstractButton):
             focus_ring=True,
             ripple_role=self._icon_color_role(),
         )
+        # Connect before the initial setChecked so a checked-at-construction
+        # toggle button resyncs its ripple role to the selected state.
+        self.toggled.connect(self._on_toggled)
         if toggle and checked:
             self.setChecked(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self.toggled.connect(self._on_toggled)
         if tooltip:
             self.setToolTip(tooltip)
         self._autofocus_pending = autofocus

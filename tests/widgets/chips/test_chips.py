@@ -45,6 +45,42 @@ def test_input_chip_removed_signal_and_set(qtbot):
     assert removed == [1]
 
 
+def test_trailing_remove_clears_pressed_state(qtbot):
+    """Regression: the trailing-remove branch skipped super().mouseReleaseEvent,
+    leaving the chip stuck isDown()."""
+    from PySide6.QtCore import QPoint, Qt
+
+    c = MdInputChip("Alice")
+    qtbot.addWidget(c)
+    c.resize(c.sizeHint())
+    removed = []
+    c.removed.connect(lambda: removed.append(1))
+    trailing = QPoint(c.width() - 12, c.height() // 2)  # inside the close zone
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=trailing)
+    assert c.isDown() is True
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=trailing)
+    assert removed == [1]
+    assert c.isDown() is False
+
+
+def test_trailing_remove_requires_press_in_trailing_zone(qtbot):
+    """Regression: ``removed`` fired for any release over the trailing zone,
+    even when the press started elsewhere on the chip."""
+    from PySide6.QtCore import QPoint, Qt
+
+    c = MdInputChip("Alice")
+    qtbot.addWidget(c)
+    c.resize(c.sizeHint())
+    removed = []
+    c.removed.connect(lambda: removed.append(1))
+    label = QPoint(10, c.height() // 2)  # press starts on the label
+    trailing = QPoint(c.width() - 12, c.height() // 2)
+    qtbot.mousePress(c, Qt.MouseButton.LeftButton, pos=label)
+    qtbot.mouseRelease(c, Qt.MouseButton.LeftButton, pos=trailing)
+    assert removed == []
+    assert c.isDown() is False
+
+
 def test_chip_set_add_remove(qtbot):
     cs = MdChipSet()
     qtbot.addWidget(cs)

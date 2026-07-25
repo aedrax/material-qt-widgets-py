@@ -143,6 +143,14 @@ class _Segment(MaterialWidgetMixin, QAbstractButton):
         self._refresh_elevation()
         self.update()
 
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        super().mousePressEvent(event)
+        self._refresh_elevation()  # pressed segments drop the hover lift
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        super().mouseReleaseEvent(event)
+        self._refresh_elevation()
+
     def changeEvent(self, event) -> None:  # noqa: N802
         if event.type() == QEvent.Type.EnabledChange and self.ripple is not None:
             self.ripple.set_enabled(self.isEnabled())

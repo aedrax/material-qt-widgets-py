@@ -79,6 +79,7 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
         self._selected_role: ColorRole | None = None
         self._checkmark_role: ColorRole | None = None
         self._show_checkmark = True
+        self._press_in_trailing = False
         self.setCheckable(selectable)
         self._init_material(
             shape=ShapeScale.SMALL,
@@ -234,14 +235,28 @@ class MdChip(MaterialWidgetMixin, QAbstractButton):
 
     # -- interaction -------------------------------------------------------
 
+    def _in_trailing_zone(self, pos) -> bool:
+        """Whether ``pos`` hits the trailing remove icon zone."""
+        if not self._trailing_icon:
+            return False
+        if not self.rect().contains(pos.toPoint()):
+            return False
+        return pos.x() >= self.width() - _PAD_ICON - _ICON
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        self._press_in_trailing = self._in_trailing_zone(event.position())
+        super().mousePressEvent(event)
+
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
-        # Trailing remove icon hit-test (input chips / deletable filter chips).
-        if self._trailing_icon and self.rect().contains(event.position().toPoint()):
-            x = self.width() - _PAD_ICON - _ICON
-            if event.position().x() >= x:
-                self.removed.emit()
-                event.accept()
-                return
+        # Trailing remove icon hit-test (input chips / deletable filter chips):
+        # activate only when the press also started in the trailing zone.
+        press_in_trailing = self._press_in_trailing
+        self._press_in_trailing = False
+        if press_in_trailing and self._in_trailing_zone(event.position()):
+            self.setDown(False)  # super() is skipped; don't leave the chip pressed
+            self.removed.emit()
+            event.accept()
+            return
         super().mouseReleaseEvent(event)
 
     def enterEvent(self, event) -> None:  # noqa: N802

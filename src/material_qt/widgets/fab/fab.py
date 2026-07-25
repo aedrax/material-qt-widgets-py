@@ -20,7 +20,7 @@ from ...core.long_press import LongPressMixin
 from ...core.material_widget import MaterialWidgetMixin
 from ...tokens.color import ColorRole
 from ...tokens.elevation import ElevationLevel
-from ...tokens.shape import CornerRadii, ShapeScale
+from ...tokens.shape import ShapeScale
 from ...tokens.typography import TypescaleRole, spec_for
 from ...core.typography_util import font_for
 from ...theme.theme_manager import ThemeManager

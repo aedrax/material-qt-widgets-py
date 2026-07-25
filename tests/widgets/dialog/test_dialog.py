@@ -74,7 +74,9 @@ def test_close_does_not_leave_focus_ring_on_sibling(qtbot):
     ok.click()  # accept -> close_dialog -> hide
 
     assert not dlg.isVisible()
-    assert not sibling.hasFocus()
+    # The sibling held focus when the dialog opened, so the overlay's focus
+    # restore intentionally hands focus back to it — but with OtherFocusReason,
+    # which must not light up its keyboard focus ring.
     assert not sibling.focus_ring.visible
 
 
@@ -103,6 +105,72 @@ def test_barrier_not_dismissible_ignores_scrim_and_escape(qtbot):
     assert rejected == [1] and not dlg.isVisible()
 
 
+def test_tab_is_confined_to_the_open_dialog(qtbot):
+    # With a modal open, the mouse is blocked by the scrim — Tab must not walk
+    # into widgets behind it either. Tab from the last button wraps to the
+    # first focusable inside the dialog; Backtab wraps the other way.
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+
+    host = QWidget()
+    host.resize(600, 400)
+    layout = QVBoxLayout(host)
+    background = MdIconButton("dark_mode")
+    layout.addWidget(background)
+    qtbot.addWidget(host)
+    host.show()
+    QApplication.setActiveWindow(host)
+
+    dlg = MdDialog(host, headline="Delete?")
+    cancel = dlg.add_action("Cancel", accept=False)
+    ok = dlg.add_action("OK", accept=True)
+    dlg.open()
+
+    ok.setFocus(Qt.FocusReason.TabFocusReason)
+    assert ok.hasFocus()
+    tab = QKeyEvent(
+        QEvent.Type.KeyPress, Qt.Key.Key_Tab, Qt.KeyboardModifier.NoModifier
+    )
+    QApplication.sendEvent(ok, tab)
+    fw = QApplication.focusWidget()
+    assert fw is not background
+    assert dlg.isAncestorOf(fw)
+    assert fw is cancel  # wrapped to the first focusable inside the dialog
+
+    backtab = QKeyEvent(
+        QEvent.Type.KeyPress, Qt.Key.Key_Backtab, Qt.KeyboardModifier.ShiftModifier
+    )
+    QApplication.sendEvent(cancel, backtab)
+    assert QApplication.focusWidget() is ok  # wrapped back to the last
+
+
+def test_focus_returns_to_previous_owner_on_close(qtbot):
+    # The widget focused before open() (e.g. the button that launched the
+    # dialog) regains focus when the dialog closes.
+    host = QWidget()
+    host.resize(600, 400)
+    layout = QVBoxLayout(host)
+    trigger = MdIconButton("dark_mode")
+    layout.addWidget(trigger)
+    qtbot.addWidget(host)
+    host.show()
+    QApplication.setActiveWindow(host)
+    trigger.setFocus(Qt.FocusReason.MouseFocusReason)
+    assert trigger.hasFocus()
+
+    dlg = MdDialog(host, headline="Delete?")
+    ok = dlg.add_action("OK", accept=True)
+    dlg.open()
+    ok.setFocus(Qt.FocusReason.TabFocusReason)
+    assert not trigger.hasFocus()
+    dlg.close_dialog()
+
+    assert not dlg.isVisible()
+    assert trigger.hasFocus()
+    # Restored with OtherFocusReason — no keyboard focus ring appears.
+    assert not trigger.focus_ring.visible
+
+
 def test_add_option_returns_clickable_row(qtbot):
     host = _host(qtbot)
     dlg = MdDialog(host, headline="Pick one")
@@ -122,3 +190,28 @@ def test_renders(qtbot):
     dlg.add_action("Delete", accept=True)
     dlg.open()
     dlg.grab()
+
+
+def test_theme_toggle_after_delete_does_not_raise(qtbot):
+    """Regression: label/option restyles were plain closures on the singleton
+    ThemeManager, so a theme change after the dialog died raised RuntimeError."""
+    from material_qt.theme.theme_manager import ThemeManager
+
+    host = _host(qtbot)
+    dlg = MdDialog(host, headline="Hi", supporting_text="Body")
+    dlg.add_option("Photos")
+    dlg.deleteLater()
+    qtbot.wait(20)  # process the deferred delete
+    ThemeManager.instance().toggle_light_dark()  # must not raise
+    ThemeManager.instance().toggle_light_dark()
+
+
+def test_labels_and_options_restyle_on_theme_change(qtbot):
+    from material_qt.theme.theme_manager import ThemeManager
+
+    host = _host(qtbot)
+    dlg = MdDialog(host, headline="Hi")
+    opt = dlg.add_option("Photos")
+    before = opt.styleSheet()
+    ThemeManager.instance().toggle_light_dark()
+    assert opt.styleSheet() != before

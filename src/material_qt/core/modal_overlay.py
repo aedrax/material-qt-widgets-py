@@ -16,7 +16,8 @@ from __future__ import annotations
 
 from PySide6.QtCore import QEvent, QObject, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QWidget
+from shiboken6 import isValid
 
 from ..tokens.color import ColorRole
 from ..tokens.motion import Duration, Easing
@@ -46,6 +47,7 @@ class ModalOverlay(QWidget):
     def _init_overlay(self, parent: QWidget) -> None:
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self._fade = 0.0
+        self._prev_focus: QWidget | None = None  # focus owner before open()
         self._anim = QVariantAnimation(self)
         self._anim.setDuration(duration_ms(Duration.MEDIUM2))
         self._anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
@@ -57,24 +59,44 @@ class ModalOverlay(QWidget):
     # -- open / close ------------------------------------------------------
 
     def open(self) -> None:
+        if self.isHidden():
+            # Remember the focus owner so _close() can hand focus back. Only on
+            # a hidden->shown transition: a re-open while visible would record
+            # a widget inside the overlay itself.
+            self._prev_focus = QApplication.focusWidget()
         self.setGeometry(self.parentWidget().rect())
         self._center_panel()
         self.raise_()
         self.show()
         self.setFocus()
         if MOTION_ENABLED:
+            # Resume from the current fade (not 0.0) so re-opening mid-fade
+            # doesn't blink the scrim back to transparent.
             self._anim.stop()
-            self._anim.setStartValue(0.0)
+            self._anim.setStartValue(self._fade)
             self._anim.setEndValue(1.0)
             self._anim.start()
         else:
             self._set_fade(1.0)
 
     def _close(self) -> None:
+        # Stop the fade so a dismissed-during-fade-in overlay doesn't keep
+        # ticking _set_fade (adjustSize + update per frame) while hidden.
+        self._anim.stop()
         # Drop focus before hiding so Qt doesn't reassign it to a sibling with
         # TabFocusReason, which would show a spurious keyboard focus ring.
         drop_focus_within(self)
         self.hide()
+        self._fade = 0.0  # the next open() fades in from scratch
+        prev = self._prev_focus
+        self._prev_focus = None
+        if (
+            prev is not None
+            and isValid(prev)
+            and prev.isVisible()
+            and not self.isAncestorOf(prev)
+        ):
+            prev.setFocus(Qt.FocusReason.OtherFocusReason)
         self.closed.emit()
 
     def dismiss(self) -> None:
@@ -86,6 +108,46 @@ class ModalOverlay(QWidget):
         self._fade = float(value)
         self._center_panel()
         self.update()
+
+    # -- keyboard focus trap -------------------------------------------------
+
+    def _tab_targets(self) -> list[QWidget]:
+        """Tab-focusable descendants of the overlay, in focus-chain order."""
+        targets: list[QWidget] = []
+        w = self.nextInFocusChain()
+        while w is not None and w is not self:
+            if (
+                self.isAncestorOf(w)
+                and w.isVisibleTo(self)
+                and w.isEnabled()
+                and w.focusPolicy() & Qt.FocusPolicy.TabFocus
+            ):
+                targets.append(w)
+            w = w.nextInFocusChain()
+        return targets
+
+    def focusNextPrevChild(self, forward: bool) -> bool:  # noqa: N802
+        # While the overlay is shown it is modal: the mouse is blocked by the
+        # scrim, so Tab must not walk into widgets behind it either. Confine
+        # Tab / Backtab to the overlay's own focusable descendants, wrapping.
+        if self.isHidden():
+            return super().focusNextPrevChild(forward)
+        targets = self._tab_targets()
+        if not targets:
+            return True  # swallow: never let focus escape the modal
+        current = QApplication.focusWidget()
+        try:
+            index = targets.index(current)
+        except ValueError:
+            index = -1 if forward else 0
+        index = (index + (1 if forward else -1)) % len(targets)
+        reason = (
+            Qt.FocusReason.TabFocusReason
+            if forward
+            else Qt.FocusReason.BacktabFocusReason
+        )
+        targets[index].setFocus(reason)
+        return True
 
     # -- geometry / scrim --------------------------------------------------
 

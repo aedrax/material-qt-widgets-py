@@ -123,6 +123,83 @@ def test_close_icon_receives_real_click(qtbot, no_motion):
     assert dismissed == [True] and sb.isHidden()
 
 
+def test_immediate_dismiss_with_motion_on_hides_and_emits(qtbot):
+    # Regression: dismiss() in the same event-loop turn as open() (shown still
+    # ~0) used to start a 0->0 tween that emits no valueChanged, leaving the
+    # snackbar stuck visible forever and `dismissed` never fired.
+    host = _host(qtbot)
+    sb = MdSnackbar(host, "Saved")
+    seen = []
+    sb.dismissed.connect(lambda: seen.append(True))
+    sb.open()
+    sb.dismiss()
+    assert seen == [True]
+    assert sb.isHidden()
+
+
+def test_open_replaces_snackbar_on_same_host(qtbot):
+    # Motion ON: the replacement must be deterministic even mid-animation —
+    # the older snackbar is hidden immediately (no exit tween) and emits
+    # `dismissed` before the new one shows.
+    host = _host(qtbot)
+    a = MdSnackbar(host, "First")
+    b = MdSnackbar(host, "Second")
+    a_seen, b_seen = [], []
+    a.dismissed.connect(lambda: a_seen.append(True))
+    b.dismissed.connect(lambda: b_seen.append(True))
+    a.open()
+    b.open()
+    assert a_seen == [True] and a.isHidden()
+    assert b_seen == [] and not b.isHidden()
+
+
+def test_replaced_snackbar_timer_does_not_dismiss_replacement(qtbot, no_motion):
+    # The older snackbar's auto-dismiss timer must be stopped on replacement,
+    # so it cannot dismiss "through" the newer snackbar.
+    host = _host(qtbot)
+    a = MdSnackbar(host, "First", duration=1)
+    b = MdSnackbar(host, "Second", duration=0)
+    a.open()
+    b.open()
+    assert not a._dismiss_timer.isActive()
+    qtbot.wait(50)
+    assert not b.isHidden()
+
+
+def test_reopen_same_snackbar_is_not_self_dismissed(qtbot, no_motion):
+    host = _host(qtbot)
+    sb = MdSnackbar(host, "Hi")
+    seen = []
+    sb.dismissed.connect(lambda: seen.append(True))
+    sb.open()
+    sb.open()
+    assert seen == [] and not sb.isHidden()
+
+
+def test_snackbars_on_different_hosts_coexist(qtbot, no_motion):
+    host_a = _host(qtbot)
+    host_b = _host(qtbot)
+    a = MdSnackbar(host_a, "A")
+    b = MdSnackbar(host_b, "B")
+    a.open()
+    b.open()
+    assert not a.isHidden() and not b.isHidden()
+
+
+def test_open_survives_deleted_predecessor(qtbot, no_motion):
+    # A registry entry whose C++ object was deleted (dismissed -> deleteLater,
+    # the documented one-shot pattern) must be skipped, not crash open().
+    host = _host(qtbot)
+    a = MdSnackbar(host, "First")
+    a.dismissed.connect(a.deleteLater)
+    a.open()
+    a.dismiss()
+    qtbot.wait(10)  # let deferred deletion run
+    b = MdSnackbar(host, "Second")
+    b.open()
+    assert not b.isHidden()
+
+
 def test_renders(qtbot):
     host = _host(qtbot)
     sb = MdSnackbar(host, "Message text", action_label="Action", show_close_icon=True)

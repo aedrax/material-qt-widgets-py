@@ -96,7 +96,8 @@ def test_close_does_not_leave_focus_ring_on_sibling(qtbot):
     dp._on_ok()
 
     assert dp.isHidden()
-    assert not sibling.hasFocus()
+    # The overlay may intentionally restore focus to the sibling on close
+    # (OtherFocusReason) — the point is that no keyboard focus ring shows.
     assert not sibling.focus_ring.visible
 
 

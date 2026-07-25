@@ -9,6 +9,13 @@ action. ``action`` fires on the action click; ``dismissed`` fires when it closes
 Snackbars are transient and one-shot — connect ``dismissed`` to ``deleteLater``
 to avoid accumulating hidden instances if you create one per message.
 
+Unlike Flutter's ``ScaffoldMessenger``, which queues snackbars and shows them
+one after another, opening a snackbar here *replaces* any snackbar currently
+shown on the same host: the older one is hidden immediately (no exit
+animation) and emits ``dismissed`` before the new one appears. A module-level
+weak registry keyed by the host widget tracks the currently-shown snackbar per
+host.
+
 No :class:`QGraphicsOpacityEffect` is used — the panel carries an elevation drop
 shadow, and nesting effects makes Qt spam "painter not active" (see
 ``dialog.py``). The transition is a pure slide, which needs no opacity effect.
@@ -16,9 +23,12 @@ shadow, and nesting effects makes Qt spam "painter not active" (see
 
 from __future__ import annotations
 
+import weakref
+
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from shiboken6 import isValid
 
 from ..icon.icon import MdIcon
 
@@ -39,6 +49,13 @@ _MIN_H = 48
 _PAD_TEXT = 16
 _PAD_ACTION = 8
 _DEFAULT_DURATION = 4000
+
+# The currently-shown snackbar per host widget. Values are weak so a snackbar
+# whose Python wrapper dies (e.g. `dismissed` -> `deleteLater` plus a dropped
+# reference) simply falls out of the registry.
+_open_snackbars: weakref.WeakValueDictionary[QWidget, MdSnackbar] = (
+    weakref.WeakValueDictionary()
+)
 
 
 class MdSnackbar(MaterialWidgetMixin, QWidget):
@@ -131,6 +148,14 @@ class MdSnackbar(MaterialWidgetMixin, QWidget):
     # -- open / dismiss ----------------------------------------------------
 
     def open(self) -> None:
+        host = self.parentWidget()
+        if host is not None:
+            # Replace-on-open (divergence from Flutter's queue, see module
+            # docstring): drop any snackbar already shown on this host.
+            prev = _open_snackbars.get(host)
+            if prev is not None and prev is not self and isValid(prev):
+                prev._dismiss_now()
+            _open_snackbars[host] = self
         self._reposition()
         self.raise_()
         self.show()
@@ -148,12 +173,27 @@ class MdSnackbar(MaterialWidgetMixin, QWidget):
         if self.isHidden():
             return
         self._dismiss_timer.stop()
-        if MOTION_ENABLED:
+        # Animate only if there is distance to travel; a 0->0 tween emits no
+        # valueChanged, so dismissing a still-collapsed snackbar must hide now.
+        if MOTION_ENABLED and self._shown > 0.01:
             self._anim.stop()
             self._anim.setStartValue(self._shown)
             self._anim.setEndValue(0.0)
             self._anim.start()  # _set_shown hides + emits when it reaches 0
         else:
+            self._anim.stop()
+            self._shown = 0.0
+            self.hide()
+            self.dismissed.emit()
+
+    def _dismiss_now(self) -> None:
+        """Hide immediately (no exit animation) and emit ``dismissed``.
+
+        Used when a newer snackbar replaces this one on the same host.
+        """
+        self._dismiss_timer.stop()
+        self._anim.stop()
+        if not self.isHidden():
             self._shown = 0.0
             self.hide()
             self.dismissed.emit()

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
+
 from material_qt.widgets.slider import MdSlider
 
 
@@ -95,6 +98,88 @@ def test_divisions_keyboard_stays_on_stops(qtbot):
     s.triggerAction(MdSlider.SliderAction.SliderSingleStepAdd)
     assert s.value() in (0, 25, 50, 75, 100)
     assert s.value() == 75
+
+
+def test_divisions_setvalue_emits_snapped_once(qtbot):
+    # setValue snaps *before* the base emission: exactly one valueChanged,
+    # already snapped — not [snapped, stale-raw] out of order.
+    s = MdSlider(minimum=0, maximum=100, value=0, divisions=3)
+    qtbot.addWidget(s)
+    seen = []
+    s.valueChanged.connect(seen.append)
+    s.setValue(66)  # stops 0/33/67/100
+    assert seen == [67]
+    assert s.value() == 67
+
+
+def test_divisions_keyboard_emits_snapped_in_order(qtbot):
+    # A single step from 33 on an uneven span lands exactly on 67 with one
+    # emission (the old sliderChange re-snap emitted [67, 66]).
+    s = MdSlider(minimum=0, maximum=100, value=33, divisions=3)
+    qtbot.addWidget(s)
+    seen = []
+    s.valueChanged.connect(seen.append)
+    qtbot.keyClick(s, Qt.Key.Key_Right)
+    assert seen == [67]
+    assert s.value() == 67
+
+
+def test_rtl_mapping_mirrors(qtbot):
+    s = MdSlider(minimum=0, maximum=100, value=25)
+    qtbot.addWidget(s)
+    s.resize(s.sizeHint())
+    ltr_x = s._handle_x()
+    s.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+    track = s._track_rect()
+    rtl_x = s._handle_x()
+    # The handle sits as far from the right edge as it did from the left.
+    assert abs((ltr_x - track.left()) - (track.right() - rtl_x)) < 1e-6
+    # Pixel → value round-trips through the mirrored mapping.
+    assert s._value_from_x(rtl_x) == 25
+
+
+def test_rtl_keys_and_visuals_agree(qtbot):
+    # QAbstractSlider mirrors arrow keys under RTL (Left steps toward the
+    # maximum, which sits at the visual left); the mirrored mapping must
+    # move the handle visually left too.
+    s = MdSlider(minimum=0, maximum=100, value=50)
+    qtbot.addWidget(s)
+    s.resize(s.sizeHint())
+    s.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+    before = s._handle_x()
+    qtbot.keyClick(s, Qt.Key.Key_Left)
+    assert s.value() == 51
+    assert s._handle_x() < before
+
+
+def test_rtl_divisions_keys_mirror(qtbot):
+    # The divisions key path mirrors Left/Right like the base class does.
+    s = MdSlider(minimum=0, maximum=100, value=50, divisions=4)
+    qtbot.addWidget(s)
+    s.resize(s.sizeHint())
+    s.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+    qtbot.keyClick(s, Qt.Key.Key_Left)
+    assert s.value() == 75
+    qtbot.keyClick(s, Qt.Key.Key_Right)
+    assert s.value() == 50
+
+
+def test_focus_halo_keyboard_only(qtbot):
+    s = MdSlider(value=50)
+    qtbot.addWidget(s)
+    s.show()
+    QApplication.setActiveWindow(s)
+    s.setFocus(Qt.FocusReason.MouseFocusReason)
+    assert s.hasFocus()
+    assert not s._keyboard_focus  # mouse focus: no halo
+    s.clearFocus()
+    s.setFocus(Qt.FocusReason.TabFocusReason)
+    assert s.hasFocus()
+    assert s._keyboard_focus  # keyboard focus: halo
+    # A mouse press on the focused slider hides the halo again.
+    qtbot.mousePress(s, Qt.MouseButton.LeftButton)
+    assert not s._keyboard_focus
+    qtbot.mouseRelease(s, Qt.MouseButton.LeftButton)
 
 
 def test_pressed_released_signals(qtbot):

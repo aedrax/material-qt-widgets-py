@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QApplication
+
 from material_qt.widgets.rangeslider import MdRangeSlider
 
 
@@ -83,6 +87,103 @@ def test_divisions_value_from_x_snaps(qtbot):
     track = rs._track_rect()
     v = rs._value_from_x(track.left() + track.width() * 0.62)
     assert v in (0, 25, 50, 75, 100)
+
+
+def test_coincident_at_min_press_right_moves_high(qtbot):
+    # low == high == min used to tie to 'low', which clamps against high —
+    # permanently stuck at (min, min). The tie must pick the movable handle.
+    rs = _slider(qtbot, minimum=0, maximum=100, low=0, high=0)
+    mid = rs._track_rect().center().x()
+    assert rs._nearest_handle(mid) == "high"
+    rs._active = rs._nearest_handle(mid)
+    rs._set_active_from_x(mid)
+    assert rs.low == 0
+    assert rs.high == 50
+    # Dragging further right keeps moving the high handle.
+    rs._set_active_from_x(rs._handle_x(80))
+    assert rs.values() == (0, 80)
+
+
+def test_coincident_at_max_press_left_moves_low(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, low=100, high=100)
+    mid = rs._track_rect().center().x()
+    assert rs._nearest_handle(mid) == "low"
+    rs._active = rs._nearest_handle(mid)
+    rs._set_active_from_x(mid)
+    assert rs.values() == (50, 100)
+
+
+def test_keyboard_steps_low_handle(qtbot):
+    # Arrows step the focused handle ('low' until a handle is pressed) by
+    # the single step and emit valuesChanged.
+    rs = _slider(qtbot, minimum=0, maximum=100, low=20, high=80, step=5)
+    seen = []
+    rs.valuesChanged.connect(lambda lo, hi: seen.append((lo, hi)))
+    qtbot.keyClick(rs, Qt.Key.Key_Right)
+    assert rs.values() == (25, 80)
+    assert seen == [(25, 80)]
+    qtbot.keyClick(rs, Qt.Key.Key_Down)
+    assert rs.values() == (20, 80)
+    qtbot.keyClick(rs, Qt.Key.Key_End)  # stops at the other handle
+    assert rs.values() == (80, 80)
+
+
+def test_keyboard_steps_last_pressed_handle(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, low=20, high=80)
+    # Press exactly on the high handle: it becomes the keyboard target.
+    hx = rs._handle_x(80)
+    qtbot.mousePress(
+        rs, Qt.MouseButton.LeftButton, pos=QPointF(hx, 20).toPoint()
+    )
+    qtbot.mouseRelease(rs, Qt.MouseButton.LeftButton)
+    assert rs._focus_handle == "high"
+    qtbot.keyClick(rs, Qt.Key.Key_Left)
+    assert rs.values() == (20, 79)
+
+
+def test_keyboard_divisions_step_one_stop(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, low=0, high=100, divisions=4)
+    qtbot.keyClick(rs, Qt.Key.Key_Right)
+    assert rs.values() == (25, 100)
+
+
+def test_hover_tracks_near_handle(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, low=20, high=80)
+    for value, expected in ((20, "low"), (80, "high")):
+        pos = QPointF(rs._handle_x(value), 20)
+        ev = QMouseEvent(
+            QEvent.Type.MouseMove,
+            pos,
+            pos,
+            Qt.MouseButton.NoButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(rs, ev)
+        assert rs._hover == expected
+    rs.leaveEvent(QEvent(QEvent.Type.Leave))
+    assert rs._hover is None
+
+
+def test_rtl_mapping_mirrors(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, low=25, high=75)
+    track = rs._track_rect()
+    ltr_x = rs._handle_x(25)
+    rs.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+    rtl_x = rs._handle_x(25)
+    assert abs((ltr_x - track.left()) - (track.right() - rtl_x)) < 1e-6
+    assert rs._value_from_x(rtl_x) == 25
+    # Under RTL the low handle sits to the right of the high handle.
+    assert rs._handle_x(25) > rs._handle_x(75)
+
+
+def test_rtl_keys_mirror(qtbot):
+    rs = _slider(qtbot, minimum=0, maximum=100, low=20, high=80)
+    rs.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
+    qtbot.keyClick(rs, Qt.Key.Key_Left)  # RTL: Left steps toward maximum
+    assert rs.values() == (21, 80)
+    qtbot.keyClick(rs, Qt.Key.Key_Right)
+    assert rs.values() == (20, 80)
 
 
 def test_renders(qtbot):

@@ -95,3 +95,19 @@ def test_fab_positioned_trailing_after_resize(qtbot):
     # Top-aligned and fully within bounds (no overhang Qt would clip).
     assert fab.y() >= 0
     assert fab.y() + fab.height() <= 80
+
+
+def test_set_fab_deletes_replaced_fab(qtbot):
+    """Regression: the replaced FAB was setParent(None) but never deleted,
+    leaking a hidden parentless top-level."""
+    from shiboken6 import isValid
+
+    bar = MdBottomAppBar(notch=True)
+    qtbot.addWidget(bar)
+    old = MdFab("add")
+    bar.set_fab(old)
+    new = MdFab("edit")
+    bar.set_fab(new)
+    qtbot.wait(20)  # process the deferred delete
+    assert not isValid(old)
+    assert bar.fab is new

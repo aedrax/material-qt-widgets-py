@@ -128,8 +128,11 @@ class MdItem(QWidget):
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()
-            if w is not None:
+            if w is not None and w is not widget:
+                # Detach *and* delete: setParent(None) alone would leak the
+                # replaced widget as an invisible top-level (cf. field.py).
                 w.setParent(None)
+                w.deleteLater()
         if widget is None:
             holder.hide()
             return None

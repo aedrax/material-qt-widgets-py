@@ -129,3 +129,21 @@ def test_scrolled_under_elevation(qtbot):
     assert bar._elevation == ElevationLevel.LEVEL3
     bar.set_collapse_fraction(0.0)
     assert bar._elevation == ElevationLevel.LEVEL0
+
+
+def test_set_bottom_deletes_replaced_widget(qtbot):
+    """Regression: the replaced bottom widget was setParent(None) but never
+    deleted, leaking a hidden parentless top-level."""
+    from shiboken6 import isValid
+
+    bar = MdTopAppBar("Title")
+    qtbot.addWidget(bar)
+    old = QLabel("Tabs")
+    old.setFixedHeight(48)
+    bar.set_bottom(old)
+    new = QLabel("Tabs 2")
+    new.setFixedHeight(48)
+    bar.set_bottom(new)
+    qtbot.wait(20)  # process the deferred delete
+    assert not isValid(old)
+    assert bar._bottom is new

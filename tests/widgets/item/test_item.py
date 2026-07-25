@@ -36,6 +36,36 @@ def test_leading_trailing_slots(qtbot):
     assert it._leading is None
 
 
+def test_swap_deletes_replaced_widget(qtbot):
+    # Regression: replaced slot widgets were setParent(None) but never
+    # deleted, leaking them as invisible top-levels.
+    from shiboken6 import isValid
+
+    it = MdItem("Title")
+    qtbot.addWidget(it)
+    old_lead, old_trail = QLabel("L1"), QLabel("T1")
+    it.set_leading(old_lead)
+    it.set_trailing(old_trail)
+    it.set_leading(QLabel("L2"))
+    it.set_trailing(None)
+    qtbot.wait(20)  # process the deferred deletes
+    assert not isValid(old_lead)
+    assert not isValid(old_trail)
+
+
+def test_swap_same_widget_is_not_deleted(qtbot):
+    from shiboken6 import isValid
+
+    it = MdItem("Title")
+    qtbot.addWidget(it)
+    lead = QLabel("L")
+    it.set_leading(lead)
+    it.set_leading(lead)  # re-setting the same widget must not delete it
+    qtbot.wait(20)
+    assert isValid(lead)
+    assert it._leading is lead
+
+
 def test_renders(qtbot):
     it = MdItem("Title", supporting_text="Sub", trailing_supporting_text="1")
     qtbot.addWidget(it)

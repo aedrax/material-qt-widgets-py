@@ -106,3 +106,44 @@ def test_renders_with_sections_and_dividers(qtbot):
     d.add_destination("Personal", icon="person")
     d.resize(d.sizeHint())
     d.grab()
+
+
+def test_theme_toggle_after_delete_does_not_raise(qtbot):
+    """Regression: section restyles were plain closures on the singleton
+    ThemeManager, so a theme change after the drawer died raised RuntimeError."""
+    from material_qt.theme.theme_manager import ThemeManager
+
+    d = MdNavigationDrawer(headline="Mail")
+    qtbot.addWidget(d)
+    d.add_destination("Inbox", icon="inbox")
+    d.add_section("Labels")
+    d.deleteLater()
+    qtbot.wait(20)  # process the deferred delete
+    ThemeManager.instance().toggle_light_dark()  # must not raise
+    ThemeManager.instance().toggle_light_dark()
+
+
+def test_section_restyles_on_theme_change(qtbot):
+    from material_qt.theme.theme_manager import ThemeManager
+
+    d = MdNavigationDrawer()
+    qtbot.addWidget(d)
+    label = d.add_section("Labels")
+    before = label.styleSheet()
+    ThemeManager.instance().toggle_light_dark()
+    assert label.styleSheet() != before
+
+
+def test_set_footer_deletes_replaced_widget(qtbot):
+    from PySide6.QtWidgets import QLabel
+    from shiboken6 import isValid
+
+    d = MdNavigationDrawer()
+    qtbot.addWidget(d)
+    old = QLabel("v1")
+    d.set_footer(old)
+    new = QLabel("v2")
+    d.set_footer(new)
+    qtbot.wait(20)  # process the deferred delete
+    assert not isValid(old)
+    assert d._footer is new

@@ -190,6 +190,14 @@ class MdBadge(QWidget):
         host is resized, shown, or hidden. Mirrors the web overlay where the
         badge is anchored to the top-right of its containing element.
         """
+        # Detach from any previous host first, or its tracker would keep
+        # driving this badge (re-showing/repositioning it) from the old host.
+        if self._tracker is not None:
+            old_host = self._tracker.parent()
+            if isinstance(old_host, QWidget):
+                old_host.removeEventFilter(self._tracker)
+            self._tracker.deleteLater()
+            self._tracker = None
         self.setParent(host)
         self._tracker = _HostTracker(self, host)
         host.installEventFilter(self._tracker)

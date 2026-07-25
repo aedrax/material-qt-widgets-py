@@ -93,6 +93,33 @@ def test_attach_tracks_host_resize(qtbot):
     assert badge.x() + badge.width() == host.width()
 
 
+def test_reattach_detaches_old_host(qtbot):
+    # Regression: attaching to a second host must drop the first host's
+    # tracker, or events on the old host keep driving the badge.
+    a = QWidget()
+    a.resize(40, 40)
+    qtbot.addWidget(a)
+    b = QWidget()
+    b.resize(80, 80)
+    qtbot.addWidget(b)
+    a.show()
+    b.show()
+    badge = MdBadge("5")
+    badge.attach(a)
+    badge.attach(b)
+    assert badge.parentWidget() is b
+    assert not badge.isHidden()
+    # Hiding/resizing/re-showing A must no longer affect the badge.
+    a.hide()
+    assert not badge.isHidden()
+    a.resize(200, 100)
+    a.show()
+    assert not badge.isHidden()
+    assert badge.x() + badge.width() == b.width()  # geometry tracks B
+    b.resize(120, 90)
+    qtbot.waitUntil(lambda: badge.x() + badge.width() == b.width())
+
+
 def test_paint_does_not_crash(qtbot):
     badge = MdBadge("12")
     qtbot.addWidget(badge)

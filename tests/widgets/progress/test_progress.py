@@ -33,6 +33,28 @@ def test_hide_stops_animation(qtbot):
     assert p._anim is None
 
 
+def test_never_shown_indeterminate_does_not_animate(qtbot):
+    # Regression: a never-shown widget gets no Hide event, so an animation
+    # started in the constructor would tick forever. It must start on show.
+    for p in (MdLinearProgress(indeterminate=True),
+              MdCircularProgress(indeterminate=True)):
+        qtbot.addWidget(p)
+        assert p._anim is None
+        p.show()
+        assert p._anim is not None
+        p.hide()
+        assert p._anim is None
+
+
+def test_set_indeterminate_while_hidden_defers_start(qtbot):
+    p = MdLinearProgress()
+    qtbot.addWidget(p)
+    p.set_indeterminate(True)
+    assert p._anim is None  # parked until visible
+    p.show()
+    assert p._anim is not None
+
+
 def test_color_and_track_roles(qtbot):
     p = MdLinearProgress(color_role=ColorRole.SECONDARY,
                          track_role=ColorRole.SURFACE_CONTAINER)

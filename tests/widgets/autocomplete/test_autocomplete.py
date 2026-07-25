@@ -175,6 +175,24 @@ def test_outside_press_dismisses_popup(qtbot):
     assert menu.isHidden()
 
 
+def test_duplicate_labels_stay_distinct_rows(qtbot):
+    # Regression: rows were keyed by display label in a dict, so options with
+    # duplicate labels collapsed to one row and always selected the first.
+    opts = [{"id": 1, "name": "Dup"}, {"id": 2, "name": "Dup"}]
+    a = MdAutocomplete(
+        options=opts, display_string_for_option=lambda o: o["name"]
+    )
+    qtbot.addWidget(a)
+    picked = []
+    a.selected.connect(picked.append)
+    a._on_text_edited("Du")
+    assert len(a._menu._items) == 2
+    a._menu._items[1].triggered.emit()
+    assert picked == [{"id": 2, "name": "Dup"}]
+    assert a.text() == "Dup"
+    assert a._menu.isHidden()
+
+
 def test_keyboard_navigation_and_activate(qtbot):
     a = MdAutocomplete(options=["Apple", "Apricot"])
     qtbot.addWidget(a)

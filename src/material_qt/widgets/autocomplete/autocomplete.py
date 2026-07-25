@@ -53,8 +53,9 @@ class _MdAutocomplete(QWidget):
         super().__init__(parent)
         self._options: list[object] = list(options) if options else []
         self._display_for = display_string_for_option or str
-        # Maps the row display text -> option object for the currently open menu.
-        self._row_options: dict[str, object] = {}
+        # Options shown in the currently open menu, in row order. Rows are
+        # committed by index so duplicate display labels stay distinct.
+        self._row_options: list[object] = []
 
         self._field = MdField(
             variant=self.VARIANT, label=label, supporting_text=supporting_text
@@ -67,13 +68,12 @@ class _MdAutocomplete(QWidget):
 
         # The shared controller owns the non-grabbing options popup (anchored
         # under the field, keyboard-forwarded from the input, top-match
-        # auto-highlighted). We map the chosen label back to its option object.
+        # auto-highlighted). Rows are committed by index (see _on_text_edited).
         self._dropdown = DropdownController(
             self._field, key_source=self._edit,
             max_height=int(options_max_height), grabs_focus=False,
             auto_highlight=True,
         )
-        self._dropdown.selected.connect(self._on_selected)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -124,12 +124,30 @@ class _MdAutocomplete(QWidget):
         self._field.set_populated(bool(text))
         self.textChanged.emit(text)
         matches = self.matching_options(text)
-        # Rebuild the label -> option map and (re)open the popup; show([]) closes.
-        self._row_options = {self._display_for(o): o for o in matches}
-        self._dropdown.show(self._row_options)
+        # Keep the row-order options and (re)open the popup; show([]) closes.
+        # Duplicate display labels each get their own row.
+        self._row_options = list(matches)
+        self._dropdown.show([self._display_for(o) for o in matches])
+        menu = self._dropdown.menu
+        if menu is not None and not menu.isHidden():
+            # Rows were rebuilt by show(); bind each to its index.
+            for index, item in enumerate(menu._items):
+                item.triggered.connect(
+                    lambda index=index: self._commit_index(index)
+                )
+
+    def _commit_index(self, index: int) -> None:
+        if 0 <= index < len(self._row_options):
+            option = self._row_options[index]
+            self.set_text(self._display_for(option))
+            self.selected.emit(option)
 
     def _on_selected(self, label: str) -> None:
-        option = self._row_options.get(label)
+        """Commit by display label (first match wins); prefer _commit_index."""
+        option = next(
+            (o for o in self._row_options if self._display_for(o) == label),
+            None,
+        )
         self.set_text(label)
         if option is not None:
             self.selected.emit(option)

@@ -14,6 +14,8 @@ editable and typing narrows the open menu (Flutter ``enableFilter``).
 
 from __future__ import annotations
 
+import time
+
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
@@ -22,6 +24,9 @@ from ..icon import MdIcon
 from ..menu import DropdownController
 
 _ARROW = 24
+# A press that dismisses the open popup is replayed to the field by Qt; its
+# release must not immediately reopen the menu (QComboBox click-to-toggle).
+_REOPEN_GRACE_S = 0.1
 
 
 class _MdSelect(QWidget):
@@ -52,6 +57,9 @@ class _MdSelect(QWidget):
         self._leading_icon = leading_icon
         self._menu_height = int(menu_height)
         self._enable_filter = bool(enable_filter)
+        self._visible_options: list[tuple[str, object]] = []
+        self._hooked_menu = None
+        self._menu_hidden_at = float("-inf")
 
         self._field = MdField(
             variant=self.VARIANT, label=label, supporting_text=supporting_text
@@ -62,15 +70,18 @@ class _MdSelect(QWidget):
             self._display.setPlaceholderText(hint_text)
         self._field.set_content(self._display)
 
-        # Optional leading icon at the field's left edge.
+        # Icons go into the field's slots so the inner edit and floating label
+        # are inset to clear them (the field owns their placement).
         self._leading: MdIcon | None = None
         if self._leading_icon:
-            self._leading = MdIcon(self._leading_icon, parent=self._field)
+            self._leading = MdIcon(self._leading_icon)
             self._leading.set_size(_ARROW)
+            self._field.set_leading(self._leading)
 
-        # Trailing dropdown arrow overlaid at the field's right edge.
-        self._arrow = MdIcon("arrow_drop_down", parent=self._field)
+        # Trailing dropdown arrow in the field's trailing slot.
+        self._arrow = MdIcon("arrow_drop_down")
         self._arrow.set_size(_ARROW)
+        self._field.set_trailing(self._arrow)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -79,19 +90,20 @@ class _MdSelect(QWidget):
         # Open the menu on a click anywhere in the field / display / arrow.
         for w in (self._field, self._display, self._arrow):
             w.installEventFilter(self)
-        self._field.installEventFilter(self)  # also for Resize repositioning
         self._sync_cursor()
 
         # Shared options popup: grabbing for a plain select (it owns its own
-        # keys), non-grabbing + keyboard-forwarded from the editable display when
-        # filtering. The chosen label maps back to its value in _on_selected.
+        # keys), non-grabbing + keyboard-forwarded from the editable display
+        # when filtering (with the top match auto-highlighted so Enter commits
+        # it). Rows are committed by index (see _show_rows) so options with
+        # duplicate display labels stay distinct.
         self._dropdown = DropdownController(
             self._field,
             key_source=self._display if self._enable_filter else None,
             max_height=self._menu_height,
             grabs_focus=not self._enable_filter,
+            auto_highlight=self._enable_filter,
         )
-        self._dropdown.selected.connect(self._on_selected)
 
         if self._enable_filter:
             self._display.textEdited.connect(self._on_text_edited)
@@ -157,9 +169,15 @@ class _MdSelect(QWidget):
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
         etype = event.type()
-        if obj is self._field and etype == QEvent.Type.Resize:
-            self._reposition_icons()
+        if obj is self._hooked_menu and etype == QEvent.Type.Hide:
+            # Remember when the popup closed: the press that dismissed it is
+            # replayed to the field underneath and must not reopen the menu.
+            self._menu_hidden_at = time.monotonic()
         elif etype == QEvent.Type.MouseButtonRelease and self._enabled:
+            if time.monotonic() - self._menu_hidden_at < _REOPEN_GRACE_S:
+                # This release belongs to the click that just dismissed the
+                # popup — swallow the reopen (click-to-toggle, QComboBox-like).
+                return not self._enable_filter
             # When filtering, a click in the editable field shouldn't swallow
             # the caret placement; just (re)open the menu. (Navigation keys and
             # outside-press dismissal are handled by the DropdownController.)
@@ -168,36 +186,56 @@ class _MdSelect(QWidget):
                 return True
         return False
 
-    def _reposition_icons(self) -> None:
-        x = self._field.width() - _ARROW - 12
-        y = int((56 - _ARROW) / 2)  # vertically center in the 56px box area
-        self._arrow.move(max(0, x), max(0, y))
-        self._arrow.raise_()
-        if self._leading is not None:
-            self._leading.move(12, max(0, y))
-            self._leading.raise_()
-
     def _on_text_edited(self, text: str) -> None:
         self._filter_menu(text)
 
     def _filter_menu(self, query: str) -> None:
         q = query.casefold()
-        self._dropdown.show(
-            [text for text, _val in self._options if q in text.casefold()]
+        self._show_rows(
+            [(text, val) for text, val in self._options if q in text.casefold()]
         )
 
     def _open_menu(self) -> None:
         if not self._options:
             return
-        self._dropdown.show([text for text, _val in self._options])
+        self._show_rows(list(self._options))
+
+    def _show_rows(self, rows: list[tuple[str, object]]) -> None:
+        """(Re)open the popup with ``rows``, committing rows by index.
+
+        Index-keyed commits keep options with duplicate display labels
+        distinct (a label lookup would always resolve to the first).
+        """
+        self._visible_options = rows
+        self._dropdown.show([text for text, _val in rows])
+        menu = self._dropdown.menu
+        if menu is None:
+            return
+        if menu is not self._hooked_menu:
+            menu.installEventFilter(self)  # watch Hide for reopen suppression
+            self._hooked_menu = menu
+        if not menu.isHidden():
+            # Rows were rebuilt by show(); bind each to its index.
+            for index, item in enumerate(menu._items):
+                item.triggered.connect(
+                    lambda index=index: self._commit_index(index)
+                )
+
+    def _commit_index(self, index: int) -> None:
+        if 0 <= index < len(self._visible_options):
+            self._commit(*self._visible_options[index])
+
+    def _commit(self, text: str, val: object) -> None:
+        self._value = val
+        self._display.setText(text)
+        self._field.set_populated(True)
+        self.changed.emit(val)
 
     def _on_selected(self, text: str) -> None:
+        """Commit by display label (first match wins); prefer _commit_index."""
         for opt_text, val in self._options:
             if opt_text == text:
-                self._value = val
-                self._display.setText(opt_text)
-                self._field.set_populated(True)
-                self.changed.emit(val)
+                self._commit(opt_text, val)
                 return
 
 

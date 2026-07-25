@@ -32,6 +32,13 @@ _MARGIN = _STATE_LAYER / 2.0
 _LABEL_H = 28
 _LABEL_GAP = 4
 _DISABLED_OPACITY = 0.38
+# Library convention (cf. focus_ring.py / ripple.py): focus indication is
+# keyboard-only — these are the reasons that count as keyboard focus.
+_KEYBOARD_FOCUS_REASONS = (
+    Qt.FocusReason.TabFocusReason,
+    Qt.FocusReason.BacktabFocusReason,
+    Qt.FocusReason.ShortcutFocusReason,
+)
 
 
 class MdSlider(MaterialWidgetMixin, QAbstractSlider):
@@ -66,6 +73,8 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
             self.setSingleStep(step)
             self.setPageStep(step)
         self._dragging = False
+        self._keyboard_focus = False
+        self._wheel_accum = 0
         self._apply_division_step()
         self.setValue(self._snap(value))
         self._init_material(shape=None, ripple=False, focus_ring=False)
@@ -96,8 +105,9 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
     def _apply_division_step(self) -> None:
         """Make arrow/page keys move by one division stop when divisions set.
 
-        ``sliderChange`` re-snaps afterwards, so an uneven interval (e.g.
-        100/3) lands on the exact stop even if the rounded step undershoots.
+        ``keyPressEvent``/``wheelEvent`` step by whole stops, so an uneven
+        interval (e.g. 100/3) lands on the exact stop even if the rounded
+        step undershoots.
         """
         if self._divisions <= 0:
             return
@@ -122,6 +132,26 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
             value = int(round(lo + idx * interval))
         return max(lo, min(hi, value))
 
+    def setValue(self, value: int) -> None:  # noqa: N802
+        """Set the value, snapping to a division stop *before* delegating.
+
+        Snapping first keeps the ``valueChanged`` stream clean: exactly one
+        emission per change, already snapped. Re-snapping afterwards (e.g.
+        re-entrantly from ``sliderChange``) would emit the snapped value and
+        then the stale raw one, out of order.
+        """
+        super().setValue(self._snap(value))
+
+    def _step_stops(self, steps: int) -> None:
+        """Move by whole division stops (keyboard/wheel path, divisions > 0)."""
+        span = self.maximum() - self.minimum()
+        if span <= 0 or steps == 0:
+            return
+        interval = span / self._divisions
+        idx = round((self.value() - self.minimum()) / interval) + steps
+        idx = max(0, min(self._divisions, idx))
+        self.setValue(int(round(self.minimum() + idx * interval)))
+
     # -- geometry ----------------------------------------------------------
 
     def _reserve(self) -> float:
@@ -141,8 +171,13 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         return (self.value() - self.minimum()) / span
 
     def _handle_x(self) -> float:
+        # Mirror under right-to-left (minimum at the right edge) so the
+        # visuals agree with QAbstractSlider's mirrored arrow keys.
         track = self._track_rect()
-        return track.left() + track.width() * self._value_fraction()
+        f = self._value_fraction()
+        if self.isRightToLeft():
+            f = 1.0 - f
+        return track.left() + track.width() * f
 
     def _value_from_x(self, x: float) -> int:
         track = self._track_rect()
@@ -150,6 +185,8 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
             return self.minimum()
         f = (x - track.left()) / track.width()
         f = max(0.0, min(1.0, f))
+        if self.isRightToLeft():
+            f = 1.0 - f
         span = self.maximum() - self.minimum()
         raw = self.minimum() + f * span
         if self._divisions > 0:
@@ -172,6 +209,7 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
     def mousePressEvent(self, event) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
             self._dragging = True
+            self._keyboard_focus = False  # pointer interaction hides the halo
             self.setSliderDown(True)
             self.setValue(self._value_from_x(event.position().x()))
             self.update()
@@ -204,18 +242,56 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         super().leaveEvent(event)
         self.update()
 
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        # With divisions, step by whole stops so uneven intervals (e.g.
+        # 100/3) land exactly on a stop with a single, already-snapped
+        # valueChanged. Left/Right mirror under right-to-left, matching
+        # QAbstractSlider's own key handling (the divisions == 0 path).
+        if self._divisions <= 0:
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            add = (key == Qt.Key.Key_Right) != self.isRightToLeft()
+            self._step_stops(1 if add else -1)
+        elif key in (Qt.Key.Key_Up, Qt.Key.Key_PageUp):
+            self._step_stops(1)
+        elif key in (Qt.Key.Key_Down, Qt.Key.Key_PageDown):
+            self._step_stops(-1)
+        elif key == Qt.Key.Key_Home:
+            self.setValue(self.minimum())
+        elif key == Qt.Key.Key_End:
+            self.setValue(self.maximum())
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        # Same as keyPressEvent: step whole division stops per wheel notch.
+        if self._divisions <= 0:
+            super().wheelEvent(event)
+            return
+        self._wheel_accum += event.angleDelta().y() or event.angleDelta().x()
+        steps = int(self._wheel_accum / 120)
+        if steps:
+            self._wheel_accum -= steps * 120
+            self._step_stops(steps)
+        event.accept()
+
+    def focusInEvent(self, event) -> None:  # noqa: N802
+        # Keyboard-only focus indication (library convention, cf.
+        # focus_ring.py / ripple.py): mouse focus paints no halo.
+        self._keyboard_focus = event.reason() in _KEYBOARD_FOCUS_REASONS
+        super().focusInEvent(event)
+        self.update()
+
+    def focusOutEvent(self, event) -> None:  # noqa: N802
+        self._keyboard_focus = False
+        super().focusOutEvent(event)
+        self.update()
+
     def sliderChange(self, change) -> None:  # noqa: N802
-        # Snap keyboard/wheel/page/programmatic changes to a division stop.
-        # The mouse path already snaps via ``_value_from_x``; skip it then.
-        if (
-            change == self.SliderChange.SliderValueChange
-            and self._divisions > 0
-            and not self._dragging
-        ):
-            snapped = self._snap(self.value())
-            if snapped != self.value():
-                self.setValue(snapped)  # re-enters; the second pass is a no-op
-                return
         super().sliderChange(change)
         self.update()
 
@@ -243,16 +319,15 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
             handle_color.setAlphaF(_DISABLED_OPACITY)
 
         painter.setPen(Qt.PenStyle.NoPen)
-        # Inactive track (right of handle).
+        # The active track runs from the minimum end (left in LTR, right in
+        # RTL) to the handle; the inactive track covers the rest.
+        rtl = self.isRightToLeft()
+        before = QRectF(track.left(), track.top(), hx - track.left(), _TRACK_H)
+        after = QRectF(hx, track.top(), track.right() - hx, _TRACK_H)
         painter.setBrush(inactive)
-        painter.drawRoundedRect(
-            QRectF(hx, track.top(), track.right() - hx, _TRACK_H), r, r
-        )
-        # Active track (left of handle).
+        painter.drawRoundedRect(before if rtl else after, r, r)
         painter.setBrush(active)
-        painter.drawRoundedRect(
-            QRectF(track.left(), track.top(), hx - track.left(), _TRACK_H), r, r
-        )
+        painter.drawRoundedRect(after if rtl else before, r, r)
 
         # Tick marks (discrete). ``divisions`` (if set) wins over ``step``.
         n = 0
@@ -263,20 +338,22 @@ class MdSlider(MaterialWidgetMixin, QAbstractSlider):
         if self._show_ticks and n > 0:
             for i in range(n + 1):
                 tx = track.left() + track.width() * (i / n if n else 0)
-                on_active = tx <= hx
+                on_active = tx >= hx if rtl else tx <= hx
                 tick = theme.color(
                     ColorRole.ON_PRIMARY if on_active else ColorRole.OUTLINE_VARIANT
                 )
                 painter.setBrush(tick)
                 painter.drawEllipse(QPointF(tx, cy), 1.0, 1.0)
 
-        # Handle state layer (hover/press).
+        # Handle state layer (hover/press/keyboard focus).
         layer = None
         if enabled:
             if self._dragging:
                 layer = StateLayer.PRESSED
-            elif self.underMouse() or self.hasFocus():
-                layer = StateLayer.HOVER if self.underMouse() else StateLayer.FOCUS
+            elif self.underMouse():
+                layer = StateLayer.HOVER
+            elif self.hasFocus() and self._keyboard_focus:
+                layer = StateLayer.FOCUS
         if layer is not None:
             sl = theme.color(ColorRole.PRIMARY)
             sl.setAlphaF(layer.opacity)

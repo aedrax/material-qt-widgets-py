@@ -8,6 +8,11 @@ dragging. The handles cannot cross — the dragged handle stops at the other.
 
 Unlike :class:`MdSlider` this is not a ``QAbstractSlider`` (which models a single
 value); it exposes ``low``/``high`` and emits ``valuesChanged(low, high)``.
+
+Keyboard: arrows/PageUp/PageDown/Home/End move the *focused* handle — the one
+last pressed or dragged (``low`` until a handle is touched). Steps match
+:class:`MdSlider`: one division interval when ``divisions`` is set, else
+``step`` (1 when continuous); Left/Right mirror under right-to-left.
 """
 
 from __future__ import annotations
@@ -63,6 +68,8 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         self._low = minimum
         self._high = maximum
         self._active: str | None = None  # 'low' | 'high' while dragging
+        self._hover: str | None = None  # handle nearest the cursor
+        self._focus_handle = "low"  # keyboard target: last pressed handle
         self._init_material(shape=None, ripple=False, focus_ring=False)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
@@ -136,14 +143,21 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         return 0.0 if span <= 0 else (value - self._min) / span
 
     def _handle_x(self, value: int) -> float:
+        # Mirror under right-to-left (minimum at the right edge) so the
+        # visuals agree with the mirrored arrow keys.
         track = self._track_rect()
-        return track.left() + track.width() * self._fraction(value)
+        f = self._fraction(value)
+        if self.isRightToLeft():
+            f = 1.0 - f
+        return track.left() + track.width() * f
 
     def _value_from_x(self, x: float) -> int:
         track = self._track_rect()
         if track.width() <= 0:
             return self._min
         f = max(0.0, min(1.0, (x - track.left()) / track.width()))
+        if self.isRightToLeft():
+            f = 1.0 - f
         raw = self._min + f * (self._max - self._min)
         if self._divisions > 0:
             return self._snap(int(round(raw)))
@@ -152,10 +166,18 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         return self._clamp(int(round(raw)))
 
     def _nearest_handle(self, x: float) -> str:
-        """Whichever handle is closer to ``x`` (ties favor 'low')."""
-        return "low" if abs(x - self._handle_x(self._low)) <= abs(
-            x - self._handle_x(self._high)
-        ) else "high"
+        """Whichever handle is closer to ``x``.
+
+        On a tie (typically coincident handles) pick the one that can move
+        toward the press — 'high' when the press maps past the handles,
+        'low' when it maps before them — so a range collapsed at either
+        bound never gets stuck.
+        """
+        d_low = abs(x - self._handle_x(self._low))
+        d_high = abs(x - self._handle_x(self._high))
+        if d_low != d_high:
+            return "low" if d_low < d_high else "high"
+        return "high" if self._value_from_x(x) >= self._high else "low"
 
     def _set_active_from_x(self, x: float) -> None:
         v = self._value_from_x(x)
@@ -163,6 +185,20 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
             self.set_values(min(v, self._high), self._high)
         elif self._active == "high":
             self.set_values(self._low, max(v, self._low))
+
+    def _single_step(self) -> int:
+        """One keyboard step: a division interval, else ``step``, else 1."""
+        span = self._max - self._min
+        if self._divisions > 0 and span > 0:
+            return max(1, int(round(span / self._divisions)))
+        return self._step if self._step > 0 else 1
+
+    def _set_focused_value(self, value: int) -> None:
+        """Move the keyboard-focused handle; handles cannot cross."""
+        if self._focus_handle == "low":
+            self.set_values(min(self._snap(value), self._high), self._high)
+        else:
+            self.set_values(self._low, max(self._snap(value), self._low))
 
     # -- sizing ------------------------------------------------------------
 
@@ -178,6 +214,7 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         if event.button() == Qt.MouseButton.LeftButton and self.isEnabled():
             x = event.position().x()
             self._active = self._nearest_handle(x)
+            self._focus_handle = self._active  # keyboard follows the pointer
             self._set_active_from_x(x)
             event.accept()
             return
@@ -188,6 +225,10 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
             self._set_active_from_x(event.position().x())
             event.accept()
             return
+        hover = self._nearest_handle(event.position().x())
+        if hover != self._hover:
+            self._hover = hover
+            self.update()
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802
@@ -203,8 +244,33 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
         self.update()
 
     def leaveEvent(self, event) -> None:  # noqa: N802
+        self._hover = None
         super().leaveEvent(event)
         self.update()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802
+        # Step the focused handle (last pressed; 'low' initially). Steps
+        # match MdSlider: page == single step; Left/Right mirror under
+        # right-to-left; Home/End go to the extremes (stopping at the other
+        # handle). ``set_values`` snaps and emits valuesChanged.
+        key = event.key()
+        step = self._single_step()
+        value = self._low if self._focus_handle == "low" else self._high
+        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            add = (key == Qt.Key.Key_Right) != self.isRightToLeft()
+            self._set_focused_value(value + (step if add else -step))
+        elif key in (Qt.Key.Key_Up, Qt.Key.Key_PageUp):
+            self._set_focused_value(value + step)
+        elif key in (Qt.Key.Key_Down, Qt.Key.Key_PageDown):
+            self._set_focused_value(value - step)
+        elif key == Qt.Key.Key_Home:
+            self._set_focused_value(self._min)
+        elif key == Qt.Key.Key_End:
+            self._set_focused_value(self._max)
+        else:
+            super().keyPressEvent(event)
+            return
+        event.accept()
 
     # -- painting ----------------------------------------------------------
 
@@ -230,30 +296,40 @@ class MdRangeSlider(MaterialWidgetMixin, QWidget):
             handle_color.setAlphaF(_DISABLED_OPACITY)
 
         painter.setPen(Qt.PenStyle.NoPen)
-        # Inactive track (full width), then the active span between handles.
+        # Inactive track (full width), then the active span between handles
+        # (under right-to-left the low handle sits to the right of the high).
+        span_l, span_r = min(lx, hx), max(lx, hx)
         painter.setBrush(inactive)
         painter.drawRoundedRect(
             QRectF(track.left(), track.top(), track.width(), _TRACK_H), r, r
         )
         painter.setBrush(active)
-        painter.drawRoundedRect(QRectF(lx, track.top(), hx - lx, _TRACK_H), r, r)
+        painter.drawRoundedRect(
+            QRectF(span_l, track.top(), span_r - span_l, _TRACK_H), r, r
+        )
 
         # Tick marks (discrete) when ``divisions`` is set. Ticks inside the
         # active span use ``on-primary``; the rest use ``outline-variant``.
         if self._divisions > 0:
             for i in range(self._divisions + 1):
                 tx = track.left() + track.width() * (i / self._divisions)
-                on_active = lx <= tx <= hx
+                on_active = span_l <= tx <= span_r
                 tick = theme.color(
                     ColorRole.ON_PRIMARY if on_active else ColorRole.OUTLINE_VARIANT
                 )
                 painter.setBrush(tick)
                 painter.drawEllipse(QPointF(tx, cy), 1.0, 1.0)
 
-        # Handle state layers (hover/press) + handles.
+        # Handle state layers (press on the dragged handle, hover only on
+        # the handle nearest the cursor) + handles.
         for which, x in (("low", lx), ("high", hx)):
-            if enabled and (self._active == which or self.underMouse()):
-                layer = StateLayer.PRESSED if self._active == which else StateLayer.HOVER
+            layer = None
+            if enabled:
+                if self._active == which:
+                    layer = StateLayer.PRESSED
+                elif self._active is None and self._hover == which and self.underMouse():
+                    layer = StateLayer.HOVER
+            if layer is not None:
                 sl = theme.color(ColorRole.PRIMARY)
                 sl.setAlphaF(layer.opacity)
                 painter.setBrush(sl)

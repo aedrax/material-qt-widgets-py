@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "material-qt"
-version = "0.1.0"
+version = "1.0.0"
 description = "Qt6/PySide6 port of Google's Material Design 3 (Material Web Components)."
 readme = "README.md"
 requires-python = ">=3.11"

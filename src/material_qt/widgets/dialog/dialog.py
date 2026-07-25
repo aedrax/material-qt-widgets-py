@@ -68,6 +68,13 @@ class MdDialog(ModalOverlay):
         super().__init__(parent)
         # Whether a scrim click or Escape dismisses (Flutter's barrierDismissible).
         self._barrier_dismissible = barrier_dismissible
+        # Theme-tracked children, restyled from ONE bound method: bound-QObject
+        # connections auto-disconnect when the dialog is destroyed, unlike the
+        # plain-Python closures they replace (which kept firing on the singleton
+        # ThemeManager after deletion and raised RuntimeError).
+        self._themed_labels: list[tuple[QLabel, ColorRole]] = []
+        self._option_buttons: list[QPushButton] = []
+        ThemeManager.instance().themeChanged.connect(self._restyle_themed)
         self._panel = _DialogPanel(self)
         pl = QVBoxLayout(self._panel)
         pl.setContentsMargins(_PAD, _PAD, _PAD, _PAD)
@@ -110,11 +117,27 @@ class MdDialog(ModalOverlay):
         self._init_overlay(parent)
 
     def _style_label(self, label: QLabel, role: ColorRole) -> None:
-        def apply() -> None:
-            label.setStyleSheet(f"color: {ThemeManager.instance().color(role).name()};")
+        self._themed_labels.append((label, role))
+        self._apply_label_color(label, role)
 
-        apply()
-        ThemeManager.instance().themeChanged.connect(apply)
+    @staticmethod
+    def _apply_label_color(label: QLabel, role: ColorRole) -> None:
+        label.setStyleSheet(f"color: {ThemeManager.instance().color(role).name()};")
+
+    @staticmethod
+    def _apply_option_style(btn: QPushButton) -> None:
+        color = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
+        btn.setStyleSheet(
+            "QPushButton {"
+            f" color: {color}; background: transparent; border: none;"
+            " text-align: left; padding: 12px 0px; }"
+        )
+
+    def _restyle_themed(self) -> None:
+        for label, role in self._themed_labels:
+            self._apply_label_color(label, role)
+        for btn in self._option_buttons:
+            self._apply_option_style(btn)
 
     # -- content / actions -------------------------------------------------
 
@@ -134,16 +157,8 @@ class MdDialog(ModalOverlay):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setFont(font_for_role("body-large"))
         # Left-aligned text, full row, no chrome — styled to the surface.
-        def apply() -> None:
-            color = ThemeManager.instance().color(ColorRole.ON_SURFACE).name()
-            btn.setStyleSheet(
-                "QPushButton {"
-                f" color: {color}; background: transparent; border: none;"
-                " text-align: left; padding: 12px 0px; }"
-            )
-
-        apply()
-        ThemeManager.instance().themeChanged.connect(apply)
+        self._option_buttons.append(btn)
+        self._apply_option_style(btn)
         self._body.addWidget(btn)
         return btn
 

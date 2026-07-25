@@ -95,8 +95,9 @@ class MdBottomAppBar(MaterialWidgetMixin, QWidget):
         positions it manually (trailing, top-aligned) so its lower half nests
         into the notch entirely within the bar's bounds.
         """
-        if self._fab is not None:
+        if self._fab is not None and self._fab is not fab:
             self._fab.setParent(None)
+            self._fab.deleteLater()
         self._fab = fab
         if fab is not None:
             fab.setParent(self)

@@ -113,7 +113,12 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
     def __init__(self, parent: QWidget | None = None, *, headline: str = "") -> None:
         super().__init__(parent)
         self._items: list[_DrawerItem] = []
+        self._sections: list[QLabel] = []
         self._footer: QWidget | None = None
+        # One bound-method connection restyles every section header: bound
+        # QObject methods auto-disconnect when the drawer is destroyed, unlike
+        # per-section closures on the singleton ThemeManager.
+        ThemeManager.instance().themeChanged.connect(self._restyle_sections)
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._lay = QVBoxLayout(self)
@@ -164,15 +169,19 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
         """Add a non-destination section header between destinations."""
         label = QLabel(text)
         label.setFont(font_for_role(TypescaleRole.TITLE_SMALL))
-
-        def style() -> None:
-            c = ThemeManager.instance().color(ColorRole.ON_SURFACE_VARIANT).name()
-            label.setStyleSheet(f"color: {c}; padding: 16px 16px 8px 16px;")
-
-        style()
-        ThemeManager.instance().themeChanged.connect(style)
+        self._sections.append(label)
+        self._style_section(label)
         self._insert(label)
         return label
+
+    @staticmethod
+    def _style_section(label: QLabel) -> None:
+        c = ThemeManager.instance().color(ColorRole.ON_SURFACE_VARIANT).name()
+        label.setStyleSheet(f"color: {c}; padding: 16px 16px 8px 16px;")
+
+    def _restyle_sections(self) -> None:
+        for label in self._sections:
+            self._style_section(label)
 
     def add_divider(self) -> MdDivider:
         """Add a divider between destinations."""
@@ -191,8 +200,9 @@ class MdNavigationDrawer(MaterialWidgetMixin, QWidget):
     def set_footer(self, widget: QWidget) -> None:
         """Pin a widget to the drawer's bottom, below the destinations (Flutter
         ``NavigationDrawer.footer``). Replaces any previous footer."""
-        if self._footer is not None:
+        if self._footer is not None and self._footer is not widget:
             self._footer.setParent(None)
+            self._footer.deleteLater()
         self._footer = widget
         # After the trailing stretch so it sits at the very bottom.
         self._lay.addWidget(widget)

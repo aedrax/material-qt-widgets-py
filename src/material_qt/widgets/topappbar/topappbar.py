@@ -272,8 +272,9 @@ class MdTopAppBar(MaterialWidgetMixin, QWidget):
         if outer.count() > 1:
             item = outer.takeAt(1)
             old = item.widget()
-            if old is not None:
+            if old is not None and old is not widget:
                 old.setParent(None)
+                old.deleteLater()
         self._bottom = widget
         self._bottom_h = max(0, widget.sizeHint().height()) if widget is not None else 0
         if widget is not None:

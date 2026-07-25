@@ -17,6 +17,7 @@ from __future__ import annotations
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from shiboken6 import isValid
 
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.typography_util import font_for_role
@@ -75,6 +76,10 @@ class MdTooltip(MaterialWidgetMixin, QWidget):
 
         target.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         target.installEventFilter(self)
+        # If the target dies while the tooltip is showing (or while the wait
+        # timer is pending), hide and stop the timers so the tooltip neither
+        # sticks around nor fires callbacks against a dead C++ object.
+        target.destroyed.connect(self._on_target_destroyed)
         self._restyle()
         ThemeManager.instance().themeChanged.connect(self._restyle)
         self.hide()
@@ -111,7 +116,16 @@ class MdTooltip(MaterialWidgetMixin, QWidget):
 
     # -- show / hide -------------------------------------------------------
 
+    def _on_target_destroyed(self) -> None:
+        if isValid(self):
+            self.hide_tooltip()
+
     def _show_tooltip(self) -> None:
+        # The wait timer can outlive the target (e.g. it was deleteLater'd
+        # mid-hover) — dereferencing the dead wrapper would raise RuntimeError.
+        if not isValid(self._target):
+            self.hide_tooltip()
+            return
         if self._target.isHidden():
             return
         # Reparent to the target's current top-level window. The tooltip is often
@@ -139,6 +153,8 @@ class MdTooltip(MaterialWidgetMixin, QWidget):
         self.hide()
 
     def _position(self) -> None:
+        if not isValid(self._target):
+            return
         window = self._target.window()
         size = self.sizeHint()
         m = self._margin

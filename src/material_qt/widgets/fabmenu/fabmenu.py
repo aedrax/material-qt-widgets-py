@@ -40,6 +40,10 @@ class MdFabMenu(QWidget):
         self._open = False
         self._closed_icon = icon
         self._items: list[tuple[QLabel, MdFab]] = []
+        # One bound-method connection restyles every item label: bound QObject
+        # methods auto-disconnect when the menu is destroyed, unlike per-item
+        # lambdas on the singleton ThemeManager.
+        ThemeManager.instance().themeChanged.connect(self._restyle_labels)
 
         self._lay = QVBoxLayout(self)
         self._lay.setContentsMargins(_M, _M, _M, _M + 4)
@@ -62,7 +66,6 @@ class MdFabMenu(QWidget):
         lbl = QLabel(label)
         lbl.setFont(font_for_role(TypescaleRole.LABEL_LARGE))
         self._style_label(lbl)
-        ThemeManager.instance().themeChanged.connect(lambda lb=lbl: self._style_label(lb))
         row.addWidget(lbl)
         fab = MdFab(icon, size=FabSize.SMALL, color=FabColor.SECONDARY)
         fab.clicked.connect(lambda: self._on_item(index))
@@ -78,6 +81,10 @@ class MdFabMenu(QWidget):
         lbl.setStyleSheet(
             f"color: {ThemeManager.instance().color(ColorRole.ON_SURFACE).name()};"
         )
+
+    def _restyle_labels(self) -> None:
+        for lbl, _fab in self._items:
+            self._style_label(lbl)
 
     @property
     def is_open(self) -> bool:

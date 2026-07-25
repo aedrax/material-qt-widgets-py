@@ -112,3 +112,24 @@ def test_reparents_to_window_when_attached_before_parenting(qtbot):
     # Positioned within the window, not off in the button's coordinate space.
     assert 0 <= tip.x() <= host.width() - tip.width()
     assert 0 <= tip.y() <= host.height() - tip.height()
+
+
+def test_target_deleted_during_wait_no_error(qtbot):
+    """Regression: the wait-timer callback dereferenced the dead target and
+    raised RuntimeError when the target was deleteLater'd mid-hover."""
+    host, btn = _target(qtbot)
+    tip = MdTooltip(btn, "Help text", wait_ms=30, show_ms=0)
+    _hover_enter(btn)
+    btn.deleteLater()
+    qtbot.wait(100)  # let the wait timer fire against the dead target
+    assert tip.isHidden()
+
+
+def test_target_destroyed_while_showing_hides(qtbot):
+    host, btn = _target(qtbot)
+    tip = MdTooltip(btn, "Help text", wait_ms=0, show_ms=0)
+    _hover_enter(btn)
+    qtbot.waitUntil(lambda: not tip.isHidden(), timeout=500)
+    btn.deleteLater()
+    qtbot.wait(20)
+    assert tip.isHidden()

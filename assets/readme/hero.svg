@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1200" height="320" viewBox="0 0 1200 320"
+     role="img" aria-labelledby="title desc">
+  <title id="title">material-qt</title>
+  <desc id="desc">Material Design 3 components for PySide6 and QtWidgets, shown next to a sheet of rendered components: buttons, switch, checkbox, radio, chip, slider, progress bar and FAB in the Material dark scheme.</desc>
+
+  <!-- Palette: material_qt baseline dark tokens.
+       surface #141218 · surface-container #211f26 · on-surface #e6e0e9
+       primary #d0bcff · on-primary #381e72 · primary-container #4f378b
+       on-primary-container #eaddff · secondary-container #4a4458
+       outline #938f99 · on-surface-variant #cac4d0 -->
+
+  <rect width="1200" height="320" rx="26" fill="#141218"/>
+
+  <g id="title-block" transform="translate(64 78)">
+    <text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="17" letter-spacing="3" fill="#938f99">PYSIDE6</text>
+    <text x="228" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, monospace"
+          font-size="17" letter-spacing="3" fill="#d0bcff">MATERIAL DESIGN 3</text>
+
+    <text x="-3" y="76" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          font-size="72" font-weight="700" fill="#e6e0e9">material-<tspan fill="#d0bcff">qt</tspan></text>
+
+    <text x="0" y="130" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          font-size="24" fill="#cac4d0">The full Material Design 3 component catalogue,</text>
+    <text x="0" y="164" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+          font-size="24" fill="#cac4d0">rendered as native QtWidgets.</text>
+
+    <g id="metadata" transform="translate(0 206)"
+       font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" fill="#938f99">
+      <!-- light/dark motif: a split disc, the theme toggle in miniature -->
+      <g transform="translate(8 -5)">
+        <circle r="8" fill="#fef7ff"/>
+        <path d="M 0 -8 A 8 8 0 0 1 0 8 Z" fill="#4f378b"/>
+        <circle r="8" fill="none" stroke="#938f99" stroke-width="1.4"/>
+      </g>
+      <text x="28" y="0">56 widget packages · 727 tests · Apache-2.0 License</text>
+    </g>
+  </g>
+
+  <g id="project-proof" transform="translate(704 36)">
+    <rect width="436" height="248" rx="20" fill="#211f26"/>
+
+    <!-- row 1: filled button · switch · FAB -->
+    <g transform="translate(26 24)">
+      <rect width="128" height="44" rx="22" fill="#d0bcff"/>
+      <text x="64" y="28" text-anchor="middle" font-size="19" font-weight="600"
+            font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            fill="#381e72">Filled</text>
+    </g>
+    <g transform="translate(180 30)">
+      <rect width="56" height="32" rx="16" fill="#d0bcff"/>
+      <circle cx="40" cy="16" r="12" fill="#381e72"/>
+      <path d="M 35.5 16 l 3 3 l 6 -6" stroke="#d0bcff" stroke-width="2" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g transform="translate(358 20)">
+      <rect width="52" height="52" rx="16" fill="#4f378b"/>
+      <path d="M 26 16 v 20 M 16 26 h 20" stroke="#eaddff" stroke-width="3.2" stroke-linecap="round"/>
+    </g>
+
+    <!-- row 2: checkbox · radio · outlined chip -->
+    <g transform="translate(26 96)">
+      <rect width="22" height="22" rx="4" fill="#d0bcff"/>
+      <path d="M 5.5 11.5 l 4 4 l 7.5 -8" stroke="#381e72" stroke-width="2.6" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g transform="translate(92 107)">
+      <circle r="10.5" fill="none" stroke="#d0bcff" stroke-width="2.4"/>
+      <circle r="5.2" fill="#d0bcff"/>
+    </g>
+    <g transform="translate(130 90)">
+      <rect width="116" height="34" rx="9" fill="none" stroke="#938f99" stroke-width="1.6"/>
+      <path d="M 18 17 l 4 4 l 7 -7.5" stroke="#d0bcff" stroke-width="2.4" fill="none"
+            stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="42" y="23" font-size="18" font-weight="500"
+            font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            fill="#e6e0e9">Filter</text>
+    </g>
+    <g transform="translate(270 90)">
+      <rect width="140" height="34" rx="9" fill="#4a4458"/>
+      <text x="70" y="23" text-anchor="middle" font-size="18" font-weight="500"
+            font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+            fill="#e8def8">Assist chip</text>
+    </g>
+
+    <!-- row 3: slider -->
+    <g transform="translate(26 166)">
+      <line x1="0" y1="0" x2="238" y2="0" stroke="#d0bcff" stroke-width="6" stroke-linecap="round"/>
+      <line x1="258" y1="0" x2="384" y2="0" stroke="#4a4458" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="248" cy="0" r="11" fill="#d0bcff"/>
+    </g>
+
+    <!-- row 4: linear progress -->
+    <g transform="translate(26 206)">
+      <rect width="266" height="7" rx="3.5" fill="#d0bcff"/>
+      <rect x="278" width="106" height="7" rx="3.5" fill="#4a4458"/>
+      <circle cx="381" cy="3.5" r="3" fill="#d0bcff"/>
+    </g>
+  </g>
+</svg>

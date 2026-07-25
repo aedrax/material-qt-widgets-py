@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+from PySide6.QtCore import QEvent, QPoint, Qt
+from PySide6.QtGui import QFocusEvent, QMoveEvent
+from PySide6.QtWidgets import QApplication, QLineEdit, QVBoxLayout, QWidget
+
 from material_qt.widgets.menu import MdMenu, MdMenuItem, MdSubmenuItem
+from material_qt.widgets.menu.menu import _SHADOW_MARGIN
 
 
 def test_add_items(qtbot):
@@ -155,13 +160,187 @@ def test_max_height_uses_maximum_not_fixed(qtbot):
         m.close()
 
 
-def test_submenu_item_selection_emits_from_child(qtbot):
+def test_submenu_item_selection_emits_from_child_and_host(qtbot):
+    host = MdMenu()
+    qtbot.addWidget(host)
     sub = MdSubmenuItem("More")
-    qtbot.addWidget(sub)
+    host.add_item(sub)
     leaf = MdMenuItem("Nested")
     sub.add_item(leaf)
-    picked = []
-    sub.submenu.selected.connect(picked.append)
+    child_picked, host_picked = [], []
+    sub.submenu.selected.connect(child_picked.append)
+    host.selected.connect(host_picked.append)
+    leaf.triggered.emit()
+    assert child_picked == ["Nested"]
+    assert host_picked == ["Nested"]
+    sub.submenu.close()
+
+
+def test_submenu_selection_closes_whole_chain(qtbot):
+    host = MdMenu()
+    qtbot.addWidget(host)
+    sub = MdSubmenuItem("More")
+    host.add_item(sub)
+    leaf = MdMenuItem("Nested", value=7)
+    sub.add_item(leaf)
+    anchor = MdMenuItem("anchor")
+    qtbot.addWidget(anchor)
+    anchor.show()
+    host.open_at(anchor)
+    sub.open_submenu()
+    assert not host.isHidden() and not sub.submenu.isHidden()
+    picked, values = [], []
+    host.selected.connect(picked.append)
+    host.activated.connect(values.append)
     leaf.triggered.emit()
     assert picked == ["Nested"]
-    sub.submenu.close()
+    assert values == [7]
+    assert host.isHidden()
+    assert sub.submenu.isHidden()
+
+
+def test_highlight_navigation_skips_disabled(qtbot):
+    m = MdMenu(grabs_focus=False)
+    qtbot.addWidget(m)
+    m.add_item(MdMenuItem("A"))
+    m.add_item(MdMenuItem("B", enabled=False))
+    m.add_item(MdMenuItem("C"))
+    m.highlight_next()  # A
+    assert m._highlight == 0
+    m.highlight_next()  # skips disabled B -> C
+    assert m._highlight == 2
+    assert not m._items[1]._highlighted
+    m.highlight_prev()  # skips disabled B -> A
+    assert m._highlight == 0
+
+
+def test_highlight_first_skips_disabled(qtbot):
+    m = MdMenu(grabs_focus=False)
+    qtbot.addWidget(m)
+    m.add_item(MdMenuItem("A", enabled=False))
+    m.add_item(MdMenuItem("B"))
+    m.highlight_first()
+    assert m._highlight == 1
+
+
+def test_highlight_all_disabled_is_noop(qtbot):
+    m = MdMenu(grabs_focus=False)
+    qtbot.addWidget(m)
+    m.add_item(MdMenuItem("A", enabled=False))
+    m.add_item(MdMenuItem("B", enabled=False))
+    m.highlight_next()
+    assert m._highlight == -1
+
+
+def test_activate_refuses_disabled_item(qtbot):
+    m = MdMenu(grabs_focus=False)
+    qtbot.addWidget(m)
+    m.add_item(MdMenuItem("A", enabled=False))
+    picked = []
+    m.selected.connect(picked.append)
+    m._set_highlight(0)  # force the highlight onto the disabled row
+    assert m.activate_highlighted() is False
+    assert picked == []
+
+
+def test_keyboard_highlight_scrolls_into_view(qtbot, qapp):
+    m = MdMenu(max_height=100, grabs_focus=False)
+    qtbot.addWidget(m)
+    for i in range(20):
+        m.add_item(MdMenuItem(f"Item {i}"))
+    anchor = MdMenuItem("anchor")
+    qtbot.addWidget(anchor)
+    anchor.show()
+    m.open_at(anchor)
+    qapp.processEvents()
+    try:
+        for _ in range(10):
+            m.highlight_next()
+        assert m._scroll.verticalScrollBar().value() > 0
+    finally:
+        m.close()
+
+
+def test_open_at_caps_height_to_screen_near_bottom(qtbot, qapp):
+    avail = qapp.primaryScreen().availableGeometry()
+    m = MdMenu()  # uncapped
+    qtbot.addWidget(m)
+    for i in range(40):
+        m.add_item(MdMenuItem(f"Item {i}"))
+    anchor = MdMenuItem("anchor")
+    qtbot.addWidget(anchor)
+    anchor.move(100, avail.bottom() - 60)
+    anchor.show()
+    m.open_at(anchor)
+    try:
+        assert m.frameGeometry().bottom() <= avail.bottom()
+        assert m.frameGeometry().top() >= avail.top()
+    finally:
+        m.close()
+
+
+def test_open_at_flips_above_when_no_room_below(qtbot, qapp):
+    avail = qapp.primaryScreen().availableGeometry()
+    m = MdMenu()
+    qtbot.addWidget(m)
+    for i in range(3):
+        m.add_item(MdMenuItem(f"Item {i}"))
+    anchor = MdMenuItem("anchor")
+    qtbot.addWidget(anchor)
+    anchor.move(100, avail.bottom() - 60)
+    anchor.show()
+    m.open_at(anchor)
+    try:
+        anchor_top = anchor.mapToGlobal(anchor.rect().topLeft()).y()
+        assert m.frameGeometry().bottom() <= avail.bottom()
+        # Flipped above: the visible panel's bottom sits above the anchor.
+        assert m.y() + m.height() - _SHADOW_MARGIN <= anchor_top
+    finally:
+        m.close()
+
+
+def _non_grabbing_popup(qtbot):
+    """A shown host window with two fields and a popup anchored to the first."""
+    host = QWidget()
+    qtbot.addWidget(host)
+    lay = QVBoxLayout(host)
+    field = QLineEdit()
+    other = QLineEdit()
+    lay.addWidget(field)
+    lay.addWidget(other)
+    host.show()
+    m = MdMenu(field, grabs_focus=False)
+    m.add_item(MdMenuItem("A"))
+    m.open_at(field)
+    assert not m.isHidden()
+    return host, field, other, m
+
+
+def test_non_grabbing_popup_closes_when_focus_leaves_anchor(qtbot):
+    host, field, other, m = _non_grabbing_popup(qtbot)
+    other.setFocus(Qt.FocusReason.TabFocusReason)
+    QApplication.sendEvent(
+        other, QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.TabFocusReason)
+    )
+    assert m.isHidden()
+
+
+def test_non_grabbing_popup_survives_focus_on_anchor(qtbot):
+    host, field, other, m = _non_grabbing_popup(qtbot)
+    QApplication.sendEvent(
+        field, QFocusEvent(QEvent.Type.FocusIn, Qt.FocusReason.MouseFocusReason)
+    )
+    assert not m.isHidden()
+    m.close()
+
+
+def test_non_grabbing_popup_closes_on_host_window_move(qtbot):
+    host, field, other, m = _non_grabbing_popup(qtbot)
+    QApplication.sendEvent(host, QMoveEvent(QPoint(60, 60), QPoint(0, 0)))
+    assert m.isHidden()
+
+
+def test_non_grabbing_popup_closes_on_window_deactivate(qtbot):
+    host, field, other, m = _non_grabbing_popup(qtbot)
+    QApplication.sendEvent(host, QEvent(QEvent.Type.WindowDeactivate))
+    assert m.isHidden()

@@ -301,6 +301,10 @@ class MdMenu(QWidget):
         self._highlight = -1  # index of the keyboard-highlighted item
         # Non-grabbing popups self-dismiss on an outside press via an app filter.
         self._app_filter_on = False
+        # The anchor passed to open_at, used by the filter to tell "focus moved
+        # back to the owning field" apart from "focus left for elsewhere".
+        self._anchor: QWidget | None = None
+        self._anchor_window: QWidget | None = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(
@@ -337,6 +341,12 @@ class MdMenu(QWidget):
 
     def add_item(self, item: MdMenuItem) -> None:
         item.triggered.connect(lambda i=item: self._on_triggered(i))
+        if isinstance(item, MdSubmenuItem):
+            # Nested picks surface on this menu too (the MdSubmenuItem
+            # docstring's contract) and close the whole chain of popups.
+            item.submenu.selected.connect(self.selected)
+            item.submenu.activated.connect(self.activated)
+            item.submenu.activated.connect(lambda _v: self.close())
         self._panel_lay.addWidget(item)
         self._items.append(item)
 
@@ -363,7 +373,12 @@ class MdMenu(QWidget):
 
         ``side="bottom"`` (default) anchors below the trigger, left-aligned;
         ``side="right"`` anchors to the trigger's right edge (used by submenus).
+        The popup is kept on the anchor's screen: it flips above the anchor
+        when there is no room below, clamps horizontally, and caps its height
+        to the available space.
         """
+        self._anchor = anchor
+        self._anchor_window = anchor.window()
         # Size the popup to its current content. The inner QScrollArea's
         # sizeHint doesn't reliably shrink an already-shown window, so set the
         # height explicitly from the item count each open (so a re-filter with
@@ -375,14 +390,36 @@ class MdMenu(QWidget):
         else:
             self.setMaximumHeight(16777215)  # QWIDGETSIZE_MAX (uncapped)
         self.adjustSize()
-        self.resize(self.width(), content_h + 2 * _SHADOW_MARGIN)
 
         if side == "right":
             corner = anchor.mapToGlobal(anchor.rect().topRight())
-            self.move(corner.x() - _SHADOW_MARGIN, corner.y() - _SHADOW_MARGIN)
+            x = corner.x() - _SHADOW_MARGIN
+            y = corner.y() - _SHADOW_MARGIN
         else:
             corner = anchor.mapToGlobal(anchor.rect().bottomLeft())
-            self.move(corner.x() - _SHADOW_MARGIN, corner.y() - _SHADOW_MARGIN + 4)
+            x = corner.x() - _SHADOW_MARGIN
+            y = corner.y() - _SHADOW_MARGIN + 4
+
+        screen = anchor.screen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            win_h = content_h + 2 * _SHADOW_MARGIN
+            if win_h > avail.height():
+                # Cap to the screen (matters when max_height is 0/uncapped).
+                win_h = avail.height()
+                content_h = win_h - 2 * _SHADOW_MARGIN
+            if side != "right" and y + win_h > avail.bottom() + 1:
+                # No room below the anchor — flip above it when it fits there
+                # (mirrors the 4px gap); otherwise the clamp below applies.
+                top_y = anchor.mapToGlobal(anchor.rect().topLeft()).y()
+                flipped = top_y + _SHADOW_MARGIN - 4 - win_h
+                if flipped >= avail.top():
+                    y = flipped
+            x = max(avail.left(), min(x, avail.right() + 1 - self.width()))
+            y = max(avail.top(), min(y, avail.bottom() + 1 - win_h))
+
+        self.resize(self.width(), content_h + 2 * _SHADOW_MARGIN)
+        self.move(x, y)
         self.show()
         if self._grabs_focus:
             self.setFocus()
@@ -405,15 +442,35 @@ class MdMenu(QWidget):
         super().hideEvent(event)
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
-        # App-wide while a non-grabbing popup is open: an outside press closes.
-        if (
-            not self._grabs_focus
-            and not self.isHidden()
-            and event.type() == QEvent.Type.MouseButtonPress
-            and not self.frameGeometry().contains(event.globalPosition().toPoint())
-        ):
-            self.close()
-        return False  # never consume — let the press reach its target
+        # App-wide while a non-grabbing popup is open: dismiss on anything that
+        # would leave the popup floating detached from its anchor. Mouse-press
+        # (not the owning field's focus-out) drives click dismissal — a
+        # focus-out close races the row's mouse-release and would swallow
+        # click-to-select.
+        if self._grabs_focus or self.isHidden():
+            return False
+        etype = event.type()
+        if etype == QEvent.Type.MouseButtonPress:
+            if not self.frameGeometry().contains(event.globalPosition().toPoint()):
+                self.close()
+        elif etype == QEvent.Type.FocusIn:
+            # Focus moved to a widget outside both the popup and its anchor
+            # field (e.g. Tab to the next field) — the popup is stale.
+            if (
+                isinstance(obj, QWidget)
+                and not self.isAncestorOf(obj)
+                and not (self._anchor is not None and self._anchor.isAncestorOf(obj))
+            ):
+                self.close()
+        elif etype in (QEvent.Type.Move, QEvent.Type.Resize):
+            # The host window moved/resized underneath the popup.
+            if obj is self._anchor_window:
+                self.close()
+        elif etype == QEvent.Type.WindowDeactivate:
+            # The host window lost activation (unless it lost it to us).
+            if obj is self._anchor_window and QApplication.activeWindow() is not self:
+                self.close()
+        return False  # never consume — let the event reach its target
 
     # -- keyboard navigation ----------------------------------------------
     #
@@ -432,25 +489,44 @@ class MdMenu(QWidget):
             self._items[self._highlight].set_highlighted(False)
         self._highlight = index
         self._items[index].set_highlighted(True)
+        # Keep the highlighted row in view when the menu scrolls (max_height).
+        self._scroll.ensureWidgetVisible(self._items[index], 0, 0)
         if self._grabs_focus:
             self._items[index].setFocus()
 
     def highlight_first(self) -> None:
-        """Highlight the first item (used so Enter commits the top match)."""
-        if self._items:
-            self._set_highlight(0)
+        """Highlight the first enabled item (so Enter commits the top match)."""
+        for index, item in enumerate(self._items):
+            if item.is_enabled():
+                self._set_highlight(index)
+                return
 
     def highlight_next(self) -> None:
-        self._set_highlight(self._highlight + 1)
+        self._step_highlight(1)
 
     def highlight_prev(self) -> None:
-        self._set_highlight(self._highlight - 1)
+        self._step_highlight(-1)
+
+    def _step_highlight(self, delta: int) -> None:
+        """Move the highlight by ``delta`` rows, skipping disabled items."""
+        if not self._items:
+            self._highlight = -1
+            return
+        index = self._highlight
+        for _ in range(len(self._items)):
+            index += delta
+            candidate = index % len(self._items)
+            if self._items[candidate].is_enabled():
+                self._set_highlight(candidate)
+                return
 
     def activate_highlighted(self) -> bool:
         """Trigger the highlighted item. Returns True if one was activated."""
         if 0 <= self._highlight < len(self._items):
-            self._items[self._highlight].triggered.emit()
-            return True
+            item = self._items[self._highlight]
+            if item.is_enabled():
+                item.triggered.emit()
+                return True
         return False
 
     def keyPressEvent(self, event) -> None:  # noqa: N802

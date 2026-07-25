@@ -92,12 +92,26 @@ class MdPaginatedDataTable(MaterialWidgetMixin, QWidget):
     def set_rows(self, rows: list[list]) -> None:
         """Replace the full dataset; resets to the first page."""
         self._all_rows = [[str(v) for v in row] for row in rows]
+        self._apply_sort()
         self._page = 0
         self._refresh()
 
     def add_row(self, values: list) -> None:
         self._all_rows.append([str(v) for v in values])
+        self._apply_sort()
         self._refresh()
+
+    def _apply_sort(self) -> None:
+        """Re-apply the inner table's active sort to the full dataset, so
+        changed data keeps matching the live sort indicator."""
+        col = self._table.sort_column_index
+        if col is not None and 0 <= col < len(self._numeric):
+            sort_rows(
+                self._all_rows,
+                col,
+                numeric=self._numeric[col],
+                ascending=self._table.sort_ascending,
+            )
 
     # -- footer ------------------------------------------------------------
 
@@ -194,8 +208,11 @@ class MdPaginatedDataTable(MaterialWidgetMixin, QWidget):
                 numeric=self._numeric[column],
                 ascending=ascending,
             )
+        page_changed = self._page != 0
         self._page = 0
         self._refresh()
+        if page_changed:
+            self.pageChanged.emit(self._page)
 
     def _refresh(self) -> None:
         # Clamp page in case the dataset shrank.

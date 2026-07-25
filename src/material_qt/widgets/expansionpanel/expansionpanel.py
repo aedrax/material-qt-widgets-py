@@ -13,9 +13,10 @@ independent — exclusive-accordion grouping (Flutter's ``ExpansionPanelList`` w
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QAbstractAnimation, QPropertyAnimation, Qt, Signal
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from shiboken6 import isValid
 
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import animate
@@ -144,6 +145,10 @@ class MdExpansionPanel(QWidget):
         super().__init__(parent)
         self._expanded = False
         self._background_role = background_role
+        # In-flight height animation (+ its on_finished), so a new toggle can
+        # cancel it instead of racing it.
+        self._anim: QPropertyAnimation | None = None
+        self._anim_on_finished = None
         # ``expanded`` kept as a back-compat alias for ``initially_expanded``.
         if expanded is not None:
             initially_expanded = expanded
@@ -209,24 +214,54 @@ class MdExpansionPanel(QWidget):
             return
         self._expanded = expanded
         self._header.set_expanded(expanded)
+        # Cancel any in-flight height animation first so the terminal state
+        # always matches this (the last) request — a finishing expand must not
+        # unclamp (setMaximumHeight(_MAX)) a panel that was just collapsed.
+        self._cancel_anim()
         if expanded:
             # Measure now — after layout has given the panel its width.
             target = self._content.sizeHint().height()
             if animated:
-                animate(self._content, b"maximumHeight", target,
-                        duration=Duration.MEDIUM2, easing=Easing.EMPHASIZED,
-                        start=0, on_finished=lambda: self._content.setMaximumHeight(_MAX))
+                def on_finished() -> None:
+                    self._anim = None
+                    self._anim_on_finished = None
+                    self._content.setMaximumHeight(_MAX)
+                self._anim_on_finished = on_finished
+                self._anim = animate(self._content, b"maximumHeight", target,
+                                     duration=Duration.MEDIUM2,
+                                     easing=Easing.EMPHASIZED,
+                                     start=0, on_finished=on_finished)
             else:
                 self._content.setMaximumHeight(_MAX)
         else:
             start = self._content.height()
             self._content.setMaximumHeight(start)
             if animated:
-                animate(self._content, b"maximumHeight", 0,
-                        duration=Duration.MEDIUM2, easing=Easing.EMPHASIZED, start=start)
+                def on_finished() -> None:
+                    self._anim = None
+                    self._anim_on_finished = None
+                self._anim_on_finished = on_finished
+                self._anim = animate(self._content, b"maximumHeight", 0,
+                                     duration=Duration.MEDIUM2,
+                                     easing=Easing.EMPHASIZED,
+                                     start=start, on_finished=on_finished)
             else:
                 self._content.setMaximumHeight(0)
         self.toggled.emit(expanded)
+
+    def _cancel_anim(self) -> None:
+        anim, cb = self._anim, self._anim_on_finished
+        self._anim = None
+        self._anim_on_finished = None
+        if anim is None or not isValid(anim):
+            return
+        if anim.state() == QAbstractAnimation.State.Stopped:
+            return  # already finished (DeleteWhenStopped: C++ side is dying)
+        # stop() fires ``finished``; disconnect first so the *old* request's
+        # callback can't unclamp/clear state for the new one.
+        if cb is not None:
+            anim.finished.disconnect(cb)
+        anim.stop()  # DeleteWhenStopped: the C++ object dies here
 
 
 __all__ = ["MdExpansionPanel"]

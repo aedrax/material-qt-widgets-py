@@ -111,6 +111,32 @@ def test_sort_numeric_is_value_order_not_lexical(qtbot):
     assert [r[0] for r in t._rows] == ["9", "20", "100"]
 
 
+def test_sort_numeric_junk_sorts_last_both_directions(qtbot):
+    # Regression: the (1, 0.0) junk sentinel was inverted by reverse=True, so
+    # unparseable cells jumped FIRST on a descending sort.
+    t = _table(qtbot)
+    t.set_columns(["N"], numeric=[True])
+    for n in ["1", "x", "3", "2"]:
+        t.add_row([n])
+    t.sort_by(0, ascending=False)
+    assert [r[0] for r in t._rows] == ["3", "2", "1", "x"]
+    t.sort_by(0, ascending=True)
+    assert [r[0] for r in t._rows] == ["1", "2", "3", "x"]
+
+
+def test_sort_numeric_nan_treated_as_junk(qtbot):
+    # Regression: float("nan") parses but compares false with everything,
+    # corrupting sort order; it must sort last like unparseable text.
+    t = _table(qtbot)
+    t.set_columns(["N"], numeric=[True])
+    for n in ["nan", "2", "1", "3"]:
+        t.add_row([n])
+    t.sort_by(0, ascending=True)
+    assert [r[0] for r in t._rows] == ["1", "2", "3", "nan"]
+    t.sort_by(0, ascending=False)
+    assert [r[0] for r in t._rows] == ["3", "2", "1", "nan"]
+
+
 def test_sort_changed_signal(qtbot):
     t = _table(qtbot)
     t.set_columns(["A", "B"])
@@ -188,3 +214,46 @@ def test_select_all_changed_signal(qtbot):
     t._select_all.setChecked(True)
     assert seen == [True]
     assert t.selected_rows() == [0, 1]
+
+
+def test_header_checkbox_resyncs_from_row_toggles(qtbot):
+    # Regression: the header select-all never re-synced from row toggles, so
+    # after select-all + unchecking one row it still claimed "all selected".
+    t = _table(qtbot, selectable=True)
+    t.set_columns(["Name"])
+    for n in ["a", "b", "c"]:
+        t.add_row([n])
+    t._select_all.setChecked(True)
+    t._row_checks[1].setChecked(False)  # mixed -> partial, not checked
+    assert not t._select_all.isChecked()
+    assert t._select_all.indeterminate
+    t._row_checks[1].setChecked(True)  # all again -> checked
+    assert t._select_all.isChecked()
+    assert not t._select_all.indeterminate
+    for cb in t._row_checks:  # none -> unchecked, not partial
+        cb.setChecked(False)
+    assert not t._select_all.isChecked()
+    assert not t._select_all.indeterminate
+
+
+def test_add_row_respects_active_sort(qtbot):
+    # Regression: add_row under a live sort indicator appended out of order.
+    t = _table(qtbot)
+    t.set_columns(["N"], numeric=[True])
+    for n in [1, 3, 5]:
+        t.add_row([n])
+    t.sort_by(0, ascending=True)
+    t.add_row([4])  # middle value must land in sorted position
+    assert [r[0] for r in t._rows] == ["1", "3", "4", "5"]
+    t.sort_by(0, ascending=False)
+    t.add_row([2])
+    assert [r[0] for r in t._rows] == ["5", "4", "3", "2", "1"]
+
+
+def test_set_rows_respects_active_sort(qtbot):
+    t = _table(qtbot)
+    t.set_columns(["N"], numeric=[True])
+    t.set_rows([[2], [1]])
+    t.sort_by(0, ascending=True)
+    t.set_rows([[9], [7], [8]])  # replaced data must match the indicator
+    assert [r[0] for r in t._rows] == ["7", "8", "9"]

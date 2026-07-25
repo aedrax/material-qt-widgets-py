@@ -107,6 +107,50 @@ def test_initially_expanded(qtbot):
     assert p.expanded
 
 
+def test_nonanimated_collapse_cancels_running_expand_motion_on(qtbot):
+    # Regression (motion ON): a non-animated collapse racing an animated
+    # expand let the expand animation keep running — its on_finished then
+    # unclamped maximumHeight to _MAX, leaving the panel visually open while
+    # expanded == False.
+    host, p = _panel(qtbot)
+    host.show()
+    p.set_expanded(True)  # animated expand starts (MEDIUM2 = 300ms)
+    p.set_expanded(False, animated=False)
+    assert not p.expanded
+    assert p._content.maximumHeight() == 0
+    qtbot.wait(500)  # outlive the (cancelled) expand animation
+    assert not p.expanded
+    assert p._content.maximumHeight() == 0
+
+
+def test_rapid_toggle_ends_collapsed_motion_on(qtbot):
+    # Motion ON: expand then collapse in quick succession must end collapsed —
+    # the two height animations must not fight over maximumHeight.
+    host, p = _panel(qtbot)
+    host.show()
+    p.toggle()  # animated expand
+    p.toggle()  # animated collapse, while the expand is still in flight
+    assert not p.expanded
+    qtbot.waitUntil(lambda: p._content.maximumHeight() == 0, timeout=2000)
+    qtbot.wait(400)  # a stale expand on_finished would reopen it about now
+    assert p._content.maximumHeight() == 0
+
+
+def test_rapid_toggle_ends_collapsed_motion_off(qtbot):
+    # Motion-off parity for the rapid-toggle path.
+    prev = motion.MOTION_ENABLED
+    motion.MOTION_ENABLED = False
+    try:
+        host, p = _panel(qtbot)
+        p.toggle()
+        p.toggle()
+        assert not p.expanded
+        qtbot.wait(50)  # flush any zero-duration finish callbacks
+        assert p._content.maximumHeight() == 0
+    finally:
+        motion.MOTION_ENABLED = prev
+
+
 def test_renders_expanded(qtbot):
     prev = motion.MOTION_ENABLED
     motion.MOTION_ENABLED = False

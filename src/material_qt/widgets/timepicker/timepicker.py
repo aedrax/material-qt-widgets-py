@@ -370,6 +370,10 @@ class MdTimePicker(ModalOverlay):
         self._minute_edit = self._make_edit(QIntValidator(0, 59))
         self._hour_edit.textEdited.connect(self._on_edit_hour)
         self._minute_edit.textEdited.connect(self._on_edit_minute)
+        # On commit, write the clamped value back so the box can't keep
+        # showing e.g. "0" while the committed hour is 1.
+        self._hour_edit.editingFinished.connect(self._commit_edits)
+        self._minute_edit.editingFinished.connect(self._commit_edits)
         colon = QLabel(":")
         colon.setFixedWidth(12)
         colon.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -446,6 +450,11 @@ class MdTimePicker(ModalOverlay):
             self._minute = max(0, min(59, int(text)))
             self._refresh()
 
+    def _commit_edits(self) -> None:
+        """Sync the input boxes to the committed (clamped) hour/minute."""
+        self._hour_edit.setText(f"{self._hour:02d}")
+        self._minute_edit.setText(f"{self._minute:02d}")
+
     def _toggle_entry(self) -> None:
         self._entry = "input" if self._entry == "dial" else "dial"
         self._apply_entry_mode()
@@ -515,6 +524,9 @@ class MdTimePicker(ModalOverlay):
     # -- open / close ------------------------------------------------------
 
     def _on_ok(self) -> None:
+        # editingFinished doesn't fire for Intermediate text (e.g. "0" in a
+        # 1-12 validator), so sync the display to the clamped state here too.
+        self._commit_edits()
         self.accepted.emit(self.selected_time)
         self._close()
 

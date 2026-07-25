@@ -18,6 +18,8 @@ re-rendered), since selection is tracked by display index, not row identity.
 
 from __future__ import annotations
 
+import math
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -61,21 +63,30 @@ def sort_rows(
 ) -> None:
     """Sort ``rows`` in place by ``column``.
 
-    Numeric columns sort by float value (unparseable cells sort last); text
-    columns sort case-insensitively. Shared by :class:`MdDataTable` and the
-    paginated wrapper so both order identically.
+    Numeric columns sort by float value; unparseable (or NaN) cells sort last
+    in *both* directions. Text columns sort case-insensitively. Shared by
+    :class:`MdDataTable` and the paginated wrapper so both order identically.
     """
 
-    def key(row: list[str]):
-        v = row[column] if column < len(row) else ""
-        if numeric:
-            try:
-                return (0, float(v))
-            except ValueError:
-                return (1, 0.0)
-        return (0, v.lower())
+    def cell(row: list[str]) -> str:
+        return row[column] if column < len(row) else ""
 
-    rows.sort(key=key, reverse=not ascending)
+    if not numeric:
+        rows.sort(key=lambda row: cell(row).lower(), reverse=not ascending)
+        return
+
+    def parse(row: list[str]) -> float | None:
+        try:
+            v = float(cell(row))
+        except ValueError:
+            return None
+        return None if math.isnan(v) else v
+
+    keyed = [(parse(row), row) for row in rows]
+    parseable = [(k, row) for k, row in keyed if k is not None]
+    junk = [row for k, row in keyed if k is None]
+    parseable.sort(key=lambda kr: kr[0], reverse=not ascending)
+    rows[:] = [row for _, row in parseable] + junk
 
 
 class _HeaderCell(QLabel):
@@ -148,12 +159,24 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
 
     def add_row(self, values: list) -> None:
         self._rows.append([str(v) for v in values])
+        self._apply_sort()
         self._render()
 
     def set_rows(self, rows: list[list]) -> None:
         """Replace all rows in one shot (single re-render)."""
         self._rows = [[str(v) for v in row] for row in rows]
+        self._apply_sort()
         self._render()
+
+    def _apply_sort(self) -> None:
+        """Re-apply the active sort so changed data matches the indicator."""
+        if self._sort_col is not None and self._sort_col < len(self._numeric):
+            sort_rows(
+                self._rows,
+                self._sort_col,
+                numeric=self._numeric[self._sort_col],
+                ascending=self._sort_asc,
+            )
 
     def selected_rows(self) -> list[int]:
         return [i for i, cb in enumerate(self._row_checks) if cb.isChecked()]
@@ -279,7 +302,7 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
             row, rl = self._make_row(_ROW_H)
             if self._selectable:
                 cb = MdCheckbox()
-                cb.toggled.connect(lambda *_: self.selectionChanged.emit())
+                cb.toggled.connect(self._on_row_toggled)
                 cb.setFixedWidth(_CHECKBOX_W - _MARGIN)
                 rl.addWidget(cb)
                 self._row_checks.append(cb)
@@ -300,8 +323,25 @@ class MdDataTable(MaterialWidgetMixin, QWidget):
             cb.blockSignals(True)
             cb.setChecked(checked)
             cb.blockSignals(False)
+            cb._sync_marker()  # blocked signals skip the visual sync
         self.selectAllChanged.emit(checked)
         self.selectionChanged.emit()
+
+    def _on_row_toggled(self, *_: object) -> None:
+        self._sync_select_all()
+        self.selectionChanged.emit()
+
+    def _sync_select_all(self) -> None:
+        """Mirror row state onto the header checkbox: all -> checked, none ->
+        unchecked, mixed -> indeterminate (tristate partial)."""
+        checked = [cb.isChecked() for cb in self._row_checks]
+        all_checked = bool(checked) and all(checked)
+        sa = self._select_all
+        sa.blockSignals(True)  # don't ricochet through _on_select_all
+        sa.setChecked(all_checked)
+        sa.blockSignals(False)
+        sa.set_indeterminate(any(checked) and not all_checked)
+        sa._sync_marker()  # blocked signals skip the visual sync
 
 
 __all__ = ["MdDataTable"]

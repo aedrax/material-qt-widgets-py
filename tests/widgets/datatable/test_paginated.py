@@ -111,6 +111,38 @@ def test_header_sort_sorts_full_dataset(qtbot):
     assert t.table._rows[0][1] == "14"
 
 
+def test_set_rows_reapplies_active_sort(qtbot):
+    # Regression: set_rows replaced the data but the inner table kept its sort
+    # indicator over now-unsorted rows.
+    t = _table(qtbot, n=25)
+    t.table.sort_by(1, ascending=False)
+    t.set_rows([[f"new{i}", i] for i in range(15)])  # unsorted replacement
+    assert t.page == 0
+    assert t.table._rows[0][1] == "14"  # global max first, per the indicator
+    assert t.table._rows[-1][1] == "5"
+
+
+def test_add_row_reapplies_active_sort(qtbot):
+    t = _table(qtbot, n=5)  # single page, 0..4 ascending
+    t.table.sort_by(1, ascending=False)
+    t.add_row(["mid", 3.5])  # must land between 4 and 3, not at the end
+    assert [r[1] for r in t.table._rows] == ["4", "3.5", "3", "2", "1", "0"]
+
+
+def test_sort_emits_page_changed_when_leaving_page(qtbot):
+    # Regression: _on_sort jumped back to page 0 without emitting pageChanged.
+    t = _table(qtbot, n=25)
+    t.set_page(2)
+    seen = []
+    t.pageChanged.connect(seen.append)
+    t.table.sort_by(1, ascending=False)
+    assert t.page == 0
+    assert seen == [0]
+    # Already on page 0: sorting again must not emit a spurious pageChanged.
+    t.table.sort_by(1, ascending=True)
+    assert seen == [0]
+
+
 def test_renders(qtbot):
     t = _table(qtbot, n=25, selectable=True)
     t.resize(t.sizeHint())

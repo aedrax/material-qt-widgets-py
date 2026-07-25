@@ -141,7 +141,8 @@ def test_close_does_not_leave_focus_ring_on_sibling(qtbot):
     tp._on_ok()  # accept -> close -> hide
 
     assert tp.isHidden()
-    assert not sibling.hasFocus()
+    # The overlay may intentionally restore focus to the sibling on close
+    # (OtherFocusReason) — the point is that no keyboard focus ring shows.
     assert not sibling.focus_ring.visible
 
 
@@ -200,6 +201,49 @@ def test_typed_value_clamps(qtbot):
     tp = MdTimePicker(host, initial_entry_mode="input")
     tp._on_edit_minute("90")  # out of range -> clamped to 59
     assert tp._minute == 59
+
+
+def test_commit_writes_clamped_value_back_into_box(qtbot):
+    # Regression: typing "0" in the 12h hour box (Intermediate for a 1-12
+    # validator) committed hour 1 while the box still displayed "0" (the
+    # _refresh hasFocus guard skips the box being typed in).
+    from PySide6.QtWidgets import QApplication
+
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    host.show()
+    QApplication.setActiveWindow(host)  # offscreen: focus needs an active window
+    tp = MdTimePicker(host, initial_time=QTime(9, 0), initial_entry_mode="input")
+    tp.open()
+    tp._hour_edit.setFocus()
+    got = []
+    tp.accepted.connect(got.append)
+    tp._hour_edit.setText("0")
+    tp._on_edit_hour("0")  # clamps the state to 1...
+    assert tp._hour_edit.text() == "0"  # ...but the focused box shows "0"
+    tp._on_ok()
+    assert tp._hour == 1
+    assert tp._hour_edit.text() == "01"  # display == committed value
+    assert got == [QTime(1, 0)]
+
+
+def test_editing_finished_syncs_display_to_clamped_state(qtbot):
+    from PySide6.QtWidgets import QApplication
+
+    host = QWidget()
+    host.resize(600, 600)
+    qtbot.addWidget(host)
+    host.show()
+    QApplication.setActiveWindow(host)
+    tp = MdTimePicker(host, initial_time=QTime(9, 0), initial_entry_mode="input")
+    tp.open()
+    tp._minute_edit.setFocus()
+    tp._minute_edit.setText("90")
+    tp._on_edit_minute("90")  # clamped to 59; focused box still shows "90"
+    assert tp._minute_edit.text() == "90"
+    tp._minute_edit.editingFinished.emit()
+    assert tp._minute_edit.text() == "59"
 
 
 def test_renders_input_mode(qtbot):

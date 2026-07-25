@@ -91,3 +91,44 @@ Wrapper that owns the full dataset and feeds the current page slice into an inne
 
 - [x] all properties verified or added
 - [ ] Coordinator follow-up: register `MdCircleAvatar` and `MdPaginatedDataTable` in the gallery (`catalog`/`gallery.py`); export `MdCircleAvatar` from `widgets/__init__.py` (and `MdPaginatedDataTable` is already exported from `widgets/datatable`). Not done here per the shared-file rule.
+
+## ReorderableListView (reorderable_list.dart) → MdReorderableList (widgets/reorderablelist) — built 🆕
+Drag-to-reorder list. Rows laid out by manual geometry so a dragged row floats
+free of its slot; a trailing drag handle drives the drag (Flutter desktop's
+`buildDefaultDragHandles`). Drop slot computed by the pure `reorder_target_index`.
+| Flutter property | Qt (QObject) equivalent | Status |
+|---|---|---|
+| `children` (keyed) | `add_item(widget)` (order = insertion order); `items` @property, `count()` | 🆕 |
+| `onReorder(oldIndex, newIndex)` | `reordered(int, int)` Signal | 🆕 |
+| Flutter's pre-removal `newIndex` (needs `if (newIndex > oldIndex) newIndex -= 1`) | ⛔ N/A — the widget **owns its order** and emits the *final resting index*, so no off-by-one correction is needed | 🆕 |
+| `buildDefaultDragHandles` | `drag_handles=` ctor kwarg (default True → trailing `drag_indicator` handle; False → whole-row drag) | 🆕 |
+| programmatic move | `move_item(old, new)` (clamps, emits if changed) | 🆕 |
+| `proxyDecorator` / drag elevation | lift uses `apply_elevation(LEVEL3)` drop shadow + `raise_()` | 🆕 |
+| `onReorderStart` / `onReorderEnd` | ⛔ not ported — single `reordered` notification covers the common case |
+| `scrollController` / `scrollDirection` / `header`/`footer` / `padding` | ⛔ vertical-only, no embedded scroll controller (host in a `QScrollArea`) |
+| animated gap reflow · auto-scroll near edges · shadow past list top/bottom edge | ⛔ deferred — rows snap to new slots instantly; an 8px gutter cushions the lift shadow (noted in the module docstring) |
+
+- [x] all properties verified or added; built with tests + gallery page
+
+## Dismissible (widgets/dismissible.dart) → MdDismissible (widgets/dismissible) — built 🆕
+Swipe-to-dismiss wrapper (a `widgets/` framework widget, not `material/`, but a
+core Material list UX). Drag flings the content off, collapses the perpendicular
+extent (reflows host), then emits `dismissed`. Drop decision is the pure
+`resolve_dismiss`; drag is an event-filter layer over the content subtree. Owns
+its lifecycle via an `IDLE→DRAGGING→FLINGING→COLLAPSING→DISMISSED` state machine
+that emits **exactly once**.
+| Flutter property | Qt (QObject) equivalent | Status |
+|---|---|---|
+| `child` | `MdDismissible(content)` ctor arg; `content` @property | 🆕 |
+| `onDismissed(direction)` | `dismissed(DismissDirection)` Signal (fired once) | 🆕 |
+| `direction` (`DismissDirection`) | `direction=` kwarg (`HORIZONTAL`/`VERTICAL`/`START_TO_END`/`END_TO_START`/`UP`/`DOWN`) | 🆕 |
+| `background` / `secondaryBackground` | `background=` / `secondary_background=` widgets (revealed by swipe sign) | 🆕 |
+| `dismissThresholds` | `threshold=` fraction (single value) | 🆕 |
+| `confirmDismiss` (async) | `confirm=` sync `bool` callback (a modal `dialog.exec()` composes naturally) — reject springs back | 🆕 |
+| programmatic dismiss | `dismiss(direction=None)` | 🆕 |
+| `key` + "onDismissed must remove it from the tree" | ⛔ N/A — the widget hides + collapses itself; `dismissed` is pure notification, no required key or removal-for-correctness (same reasoning as the reorder `newIndex` wart) |
+| async `confirmDismiss` · per-direction thresholds · `crossAxisEndOffset` · `movementDuration`/`resizeDuration` overrides | ⛔ deferred — sync confirm, single threshold, token durations |
+| `onUpdate` / `onResize` / `behavior` / `dragStartBehavior` | ⛔ not ported — single `dismissed` notification |
+
+- Limitation: children added *after* construction aren't covered by the drag filter (construction-time wrapper).
+- [x] all properties verified or added; built with tests + gallery page

@@ -9,7 +9,7 @@ native Qt widgets pick up the theme.
 from __future__ import annotations
 
 from enum import Enum, auto
-from typing import Mapping
+from collections.abc import Mapping
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QPalette
@@ -51,7 +51,7 @@ class ThemeManager(QObject):
 
     themeChanged = Signal()
 
-    _instance: "ThemeManager | None" = None
+    _instance: ThemeManager | None = None
 
     def __init__(self) -> None:
         super().__init__()
@@ -61,12 +61,13 @@ class ThemeManager(QObject):
         # kept per mode so a brand color can differ between light and dark.
         self._overrides_light: dict[ColorRole, QColor] = {}
         self._overrides_dark: dict[ColorRole, QColor] = {}
+        self._system_hints_connected = False
         self._connect_system_hints()
 
     # -- singleton ---------------------------------------------------------
 
     @classmethod
-    def instance(cls) -> "ThemeManager":
+    def instance(cls) -> ThemeManager:
         if cls._instance is None:
             cls._instance = ThemeManager()
         return cls._instance
@@ -74,6 +75,14 @@ class ThemeManager(QObject):
     # -- system hint wiring ------------------------------------------------
 
     def _connect_system_hints(self) -> None:
+        """Wire ``colorSchemeChanged`` once an application exists.
+
+        Idempotent, and safe to call before ``QGuiApplication`` is constructed:
+        public entry points retry it, so a manager created pre-app still starts
+        tracking the OS scheme on first use afterwards.
+        """
+        if self._system_hints_connected:
+            return
         app = QGuiApplication.instance()
         if app is None:
             return
@@ -82,6 +91,7 @@ class ThemeManager(QObject):
         signal = getattr(hints, "colorSchemeChanged", None)
         if signal is not None:
             signal.connect(self._on_system_scheme_changed)
+        self._system_hints_connected = True
 
     def _on_system_scheme_changed(self, *args: object) -> None:
         if self._mode is ThemeMode.SYSTEM:
@@ -110,6 +120,7 @@ class ThemeManager(QObject):
 
     def set_mode(self, mode: ThemeMode) -> None:
         """Set the theme mode; refreshes and signals if the scheme changes."""
+        self._connect_system_hints()  # retry in case we predate the app
         self._mode = mode
         self._refresh()
 
@@ -140,6 +151,7 @@ class ThemeManager(QObject):
 
     def color(self, role: ColorRole | str):
         """Return the QColor for ``role``, honoring any runtime override."""
+        self._connect_system_hints()  # retry in case we predate the app
         role = ColorRole(role)
         overrides = self._overrides_dark if self._scheme.is_dark else self._overrides_light
         if role in overrides:

@@ -44,7 +44,10 @@ class MdLoadingIndicator(QWidget):
         self._anim.setLoopCount(-1)  # loop forever — a one-shot would freeze
         self._anim.valueChanged.connect(self._set_t)
         ThemeManager.instance().themeChanged.connect(self.update)
-        self.start()
+        # Run whenever visible (unless the user calls stop()). The animation is
+        # started/stopped from show/hide events — never in the constructor — so
+        # a never-shown indicator does not tick at frame rate forever.
+        self._active = True
 
     # -- drivable state (testable) -----------------------------------------
 
@@ -62,11 +65,25 @@ class MdLoadingIndicator(QWidget):
         return self._anim.state() == QVariantAnimation.State.Running
 
     def start(self) -> None:
-        if MOTION_ENABLED:
+        """Run the animation; while hidden it stays parked until shown."""
+        self._active = True
+        if MOTION_ENABLED and self.isVisible():
             self._anim.start()
 
     def stop(self) -> None:
+        """Stop the animation; it will not restart on show until start()."""
+        self._active = False
         self._anim.stop()
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if self._active:
+            self.start()
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        # Pause (don't clear _active) so re-showing resumes automatically.
+        self._anim.stop()
+        super().hideEvent(event)
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(self._size, self._size)

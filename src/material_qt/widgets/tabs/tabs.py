@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from shiboken6 import isValid
 
 from ...core.material_widget import MaterialWidgetMixin
 from ...core.motion import MOTION_ENABLED, duration_ms, easing_curve
@@ -214,6 +215,10 @@ class MdTabs(QWidget):
         self._anim.setDuration(duration_ms(Duration.SHORT4))
         self._anim.setEasingCurve(easing_curve(Easing.EMPHASIZED))
         self._anim.valueChanged.connect(self._on_anim)
+        # Layout changes during the slide are skipped by _reposition_indicator;
+        # re-snap once the animation lands so a mid-animation resize can't
+        # leave the indicator misplaced until the next selection.
+        self._anim.finished.connect(self._on_anim_finished)
         self._start = (0.0, 0.0)
         self._target = (0.0, 0.0)
         self._apply_scrollable()
@@ -352,6 +357,11 @@ class MdTabs(QWidget):
         self._ind = sx + (tx - sx) * t
         self._ind_w = sw + (tw - sw) * t
         self._strip.update()
+
+    def _on_anim_finished(self) -> None:
+        if not isValid(self) or not isValid(self._strip):
+            return
+        self._reposition_indicator()
 
     def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)

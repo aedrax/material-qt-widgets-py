@@ -81,8 +81,12 @@ class MaterialWidgetMixin:
         if typescale is not None:
             apply_typography(widget, typescale)
 
-        # Theme reactivity.
+        # Theme reactivity. The drop-shadow effect bakes the SHADOW color in at
+        # apply time, so it must be re-applied when the theme changes (e.g. a
+        # set_overrides on SHADOW); _refresh_elevation_effect is a no-op for
+        # widgets without an effect.
         ThemeManager.instance().themeChanged.connect(widget.update)
+        ThemeManager.instance().themeChanged.connect(self._refresh_elevation_effect)
 
         # Elevation always uses a QGraphicsDropShadowEffect — a real soft shadow
         # that extends beyond the widget bounds. It composites correctly over the
@@ -114,6 +118,12 @@ class MaterialWidgetMixin:
         if self._apply_elevation_effect:
             apply_elevation(self._as_widget(), self._elevation)
         self._as_widget().update()
+
+    def _refresh_elevation_effect(self) -> None:
+        """Re-apply the drop shadow so its baked-in theme color stays current."""
+        if not self._apply_elevation_effect or self._elevation == ElevationLevel.LEVEL0:
+            return
+        apply_elevation(self._as_widget(), self._elevation)
 
     def clip_path(self):
         widget = self._as_widget()

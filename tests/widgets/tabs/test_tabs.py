@@ -72,6 +72,28 @@ def test_indicator_positioned_after_show(qtbot):
     assert abs(t._ind - cx) < 1.0
 
 
+def test_resize_during_selection_animation_resnaps(qtbot):
+    # Regression: _reposition_indicator skips while the selection animation
+    # runs, so a resize mid-slide left the indicator at the stale pre-resize
+    # position until the next selection. It must re-snap when the slide lands.
+    t = MdTabs()
+    qtbot.addWidget(t)
+    t.add_tab("Alpha")
+    b = t.add_tab("Bravo")
+    t.add_tab("Charlie")
+    t.resize(300, 48)
+    t.show()
+    qtbot.waitExposed(t)
+    t.set_selected_index(1)
+    assert t._anim.state() == t._anim.State.Running  # motion ON: it slides
+    t.resize(500, 48)  # mid-animation layout change
+    qtbot.waitUntil(lambda: t._anim.state() != t._anim.State.Running,
+                    timeout=1000)
+    cx, w = t._indicator_target(b)
+    assert abs(t._ind - cx) < 1.0
+    assert abs(t._ind_w - w) < 1.0
+
+
 def test_selected_index_round_trip(qtbot):
     t = MdTabs()
     qtbot.addWidget(t)

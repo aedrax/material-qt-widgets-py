@@ -119,6 +119,78 @@ def test_override_propagates_to_palette(qapp):
     tm.apply_app_palette(qapp)
 
 
+class _FakeSignal:
+    def __init__(self) -> None:
+        self.connections = []
+
+    def connect(self, slot) -> None:
+        self.connections.append(slot)
+
+
+class _FakeHints:
+    def __init__(self, signal: _FakeSignal) -> None:
+        self.colorSchemeChanged = signal  # mimics Qt naming
+
+
+class _FakeApp:
+    def __init__(self, hints: _FakeHints) -> None:
+        self._hints = hints
+
+    def styleHints(self) -> _FakeHints:  # noqa: N802
+        return self._hints
+
+
+def test_system_hints_wiring_retried_after_app_exists(qapp, monkeypatch):
+    # Regression: a ThemeManager created before QApplication silently skipped
+    # colorSchemeChanged wiring and never retried, so SYSTEM mode never
+    # tracked the OS. Public entry points must retry (idempotently).
+    from material_qt.theme import theme_manager as mod
+
+    class _NoAppFactory:
+        @staticmethod
+        def instance():
+            return None
+
+    signal = _FakeSignal()
+    fake_app = _FakeApp(_FakeHints(signal))
+
+    class _FakeAppFactory:
+        @staticmethod
+        def instance():
+            return fake_app
+
+    saved = ThemeManager._instance
+    try:
+        ThemeManager._instance = None
+        # No app yet: construction cannot wire the hint signal.
+        monkeypatch.setattr(mod, "QGuiApplication", _NoAppFactory)
+        tm = ThemeManager.instance()
+        assert tm._system_hints_connected is False
+
+        # An app appears: first use must wire the signal, exactly once.
+        monkeypatch.setattr(mod, "QGuiApplication", _FakeAppFactory)
+        tm.color(ColorRole.PRIMARY)
+        assert tm._system_hints_connected is True
+        assert signal.connections == [tm._on_system_scheme_changed]
+
+        # Idempotent: further uses do not connect again.
+        tm.color(ColorRole.SECONDARY)
+        tm._connect_system_hints()
+        assert len(signal.connections) == 1
+    finally:
+        ThemeManager._instance = saved
+
+
+def test_system_hints_wired_at_construction_with_app(qapp):
+    saved = ThemeManager._instance
+    try:
+        ThemeManager._instance = None
+        tm = ThemeManager.instance()  # real qapp exists
+        assert tm._system_hints_connected is True
+    finally:
+        ThemeManager._instance = saved
+
+
 def test_override_repaints_component(qapp):
     from material_qt.widgets.button import MdFilledButton
 

@@ -4,8 +4,9 @@ Ports Material Web's ``progress/`` — :class:`MdLinearProgress` and
 :class:`MdCircularProgress`, each in determinate (``value`` 0..1) and
 indeterminate (continuous animation) modes. Active indicator is ``primary`` on a
 ``surface-container-highest`` track, 4px thick. Indeterminate animations loop via
-a :class:`QVariantAnimation` that is stopped when the widget is hidden or
-destroyed, so no timer leaks after teardown.
+a :class:`QVariantAnimation` that runs only while the widget is visible (started
+on show, stopped on hide/destroy), so no timer leaks after teardown and a
+never-shown widget never ticks.
 """
 
 from __future__ import annotations
@@ -39,8 +40,9 @@ class _ProgressBase(MaterialWidgetMixin, QWidget):
         self._phase = 0.0
         self._anim: QVariantAnimation | None = None
         self._init_material(shape=None, ripple=False, focus_ring=False)
-        if self._indeterminate:
-            self._start_anim()
+        # No animation start here: _start_anim only runs while visible, and
+        # showEvent starts it. A never-shown indeterminate widget gets no Hide
+        # event, so starting in the constructor would tick forever.
 
     # -- properties --------------------------------------------------------
 
@@ -90,7 +92,7 @@ class _ProgressBase(MaterialWidgetMixin, QWidget):
     def _start_anim(self) -> None:
         from ...core.motion import MOTION_ENABLED
 
-        if not MOTION_ENABLED or self._anim is not None:
+        if not MOTION_ENABLED or self._anim is not None or not self.isVisible():
             return
         anim = QVariantAnimation(self)
         anim.setStartValue(0.0)

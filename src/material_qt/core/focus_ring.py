@@ -74,6 +74,8 @@ class _FocusOverlay(QWidget):
         nothing to draw the ring against.
         """
         host = self._host
+        if not isValid(host):
+            return
         parent = host.parentWidget()
         if parent is None:
             return
@@ -87,7 +89,9 @@ class _FocusOverlay(QWidget):
         self.raise_()
 
     def paintEvent(self, event) -> None:  # noqa: N802
-        if not self._visible or self._stroke <= 0:
+        # The overlay lives in the host's *parent*, so it can be asked to paint
+        # after the host's C++ object is gone (deleteLater on a focused host).
+        if not self._visible or self._stroke <= 0 or not isValid(self._host):
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
@@ -111,6 +115,14 @@ class _FocusOverlay(QWidget):
         painter.drawPath(rounded_path(ring_rect, self._radii))
 
 
+def _drop_overlay(overlay: _FocusOverlay) -> None:
+    """Tear down a host's focus overlay when the host is destroyed."""
+    if isValid(overlay):
+        overlay._visible = False
+        overlay.hide()
+        overlay.deleteLater()
+
+
 class FocusRingController(QObject):
     """Shows an animated focus ring around ``host`` for keyboard focus only."""
 
@@ -121,6 +133,13 @@ class FocusRingController(QObject):
         self._grow_anim = None
         self._shrink_anim = None
         host.installEventFilter(self)
+        # Once shown, the overlay is reparented to the host's parent and would
+        # outlive the host — a dangling ring at best, a use-after-free paint at
+        # worst. Connect a lambda, NOT a bound method: PySide holds bound-method
+        # slots weakly, and if this controller's wrapper is GC'd first the emit
+        # fails with "Slot not found". The connection itself owns the lambda
+        # and dies with the host.
+        host.destroyed.connect(lambda *_, ov=self._overlay: _drop_overlay(ov))
 
     @property
     def overlay(self) -> _FocusOverlay:

@@ -27,8 +27,7 @@ python -m material_qt.gallery      # browse every component
 
 ```python
 from PySide6.QtWidgets import QApplication
-from material_qt.theme.theme_manager import ThemeManager, ThemeMode
-from material_qt.widgets.button import MdFilledButton
+from material_qt import MdFilledButton, ThemeManager, ThemeMode
 
 app = QApplication([])
 ThemeManager.instance().set_mode(ThemeMode.SYSTEM)  # light / dark / system
@@ -40,6 +39,13 @@ app.exec()
 Theming is one call: every widget repaints on `ThemeManager.themeChanged`
 mode switches, brand palettes (`set_palette`), and per-role overrides
 (`set_overrides`) apply live to a running app.
+
+## Documentation
+
+The [docs folder](./docs/README.md) has the full reference:
+[getting started](./docs/usage.md), [theming](./docs/theming.md),
+[architecture](./docs/architecture.md), and a
+[doc for every component](./docs/README.md#components) in the catalogue.
 
 ## The gallery
 
@@ -55,7 +61,7 @@ visual regression surface for the test suite.
 
 | Package | Contents |
 | --- | --- |
-| `material_qt.widgets` | 56 component packages, buttons, text fields, dialogs, sheets, pickers, data table, navigation, and the rest of the M3 catalogue |
+| `material_qt.widgets` | 53 component packages (56 gallery pages), buttons, text fields, dialogs, sheets, pickers, data table, navigation, and the rest of the M3 catalogue |
 | `material_qt.core` | The shared machinery: ripple, state layer, focus ring, elevation, motion, shape, modal overlay |
 | `material_qt.theme` | `ColorScheme` role -> color maps, `ThemeManager` (light/dark/system, palettes, overrides) |
 | `material_qt.tokens` | Pure-Python design tokens generated from the upstream SCSS, no Qt imports |
@@ -71,9 +77,12 @@ Without an editable install, prefix `PYTHONPATH=src`.
 ## Adding a widget
 
 A new component is: a module under `src/material_qt/widgets/<name>/`, exports
-in its `__init__.py`, tests under `tests/widgets/<name>/`, and three gallery
+in its `__init__.py` (re-exported from `material_qt.widgets` — the export
+test enforces this), tests under `tests/widgets/<name>/`, three gallery
 edits in `src/material_qt/gallery/gallery.py`, the import, a `_build_<name>`
-function, and alphabetical entries in `_COMPONENTS` and `COMPONENT_META`.
+function, and alphabetical entries in `_COMPONENTS` and `COMPONENT_META`,
+plus a doc page at `docs/components/<page-slug>.md` linked from
+`docs/README.md` (the docs-parity test enforces this).
 
 ## License
 
